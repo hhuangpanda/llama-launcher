@@ -8,26 +8,97 @@ from llama_launcher.config import Config, GlobalOptions, ModelEntry, Profile, Ru
 REL = r"C:\llama\llama-server.exe"
 LOCAL = r"C:\src\llama.cpp\build-cuda\bin\llama-server.exe"
 M = r"C:\models"
-BASE = ["-t", "12", "--load-mode", "none", "--fit", "on", "--flash-attn", "on",
-        "--cache-type-k", "q8_0", "--cache-type-v", "q8_0", "--host", "127.0.0.1", "--port", "9931"]
+BASE = [
+    "-t",
+    "12",
+    "--load-mode",
+    "none",
+    "--fit",
+    "on",
+    "--flash-attn",
+    "on",
+    "--cache-type-k",
+    "q8_0",
+    "--cache-type-v",
+    "q8_0",
+    "--host",
+    "127.0.0.1",
+    "--port",
+    "9931",
+]
 
 ENTRIES = [
-    {"name": "gemma-qat", "command": [REL, "-m", rf"{M}\gemma-qat.gguf", "--ctx-size", "131072", *BASE,
-                                      "--mmproj", rf"{M}\gemma-mmproj.gguf", "-md", rf"{M}\mtp-gemma.gguf",
-                                      "--spec-type", "draft-mtp", "--temp", "1.0", "--alias", "gemma-qat"]},
-    {"name": "qwen-general", "command": [REL, "-m", rf"{M}\qwen.gguf", "--ctx-size", "196608", *BASE,
-                                         "--chat-template-kwargs", '{"preserve_thinking":true}', "--temp", "1.0"]},
-    {"name": "qwen-kvq4", "command": [LOCAL, "-m", rf"{M}\qwen.gguf", "--ctx-size", "102400", *BASE[:-6],
-                                      "--cache-type-v", "q4_0", "--host", "127.0.0.1", "--port", "9931",
-                                      "--alias", "qwen-kvq4", "--temp", "0.6"]},
+    {
+        "name": "gemma-qat",
+        "command": [
+            REL,
+            "-m",
+            rf"{M}\gemma-qat.gguf",
+            "--ctx-size",
+            "131072",
+            *BASE,
+            "--mmproj",
+            rf"{M}\gemma-mmproj.gguf",
+            "-md",
+            rf"{M}\mtp-gemma.gguf",
+            "--spec-type",
+            "draft-mtp",
+            "--temp",
+            "1.0",
+            "--alias",
+            "gemma-qat",
+        ],
+    },
+    {
+        "name": "qwen-general",
+        "command": [
+            REL,
+            "-m",
+            rf"{M}\qwen.gguf",
+            "--ctx-size",
+            "196608",
+            *BASE,
+            "--chat-template-kwargs",
+            '{"preserve_thinking":true}',
+            "--temp",
+            "1.0",
+        ],
+    },
+    {
+        "name": "qwen-kvq4",
+        "command": [
+            LOCAL,
+            "-m",
+            rf"{M}\qwen.gguf",
+            "--ctx-size",
+            "102400",
+            *BASE[:-6],
+            "--cache-type-v",
+            "q4_0",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "9931",
+            "--alias",
+            "qwen-kvq4",
+            "--temp",
+            "0.6",
+        ],
+    },
 ]
 
 
 @pytest.fixture
 def run(release_help):
     def _run(entries=ENTRIES, settings=None, models=None, replace=False):
-        return ci.plan(ci.load_entries(json.dumps(entries)), settings or Settings(), models or [],
-                       lambda exe: release_help, replace)
+        return ci.plan(
+            ci.load_entries(json.dumps(entries)),
+            settings or Settings(),
+            models or [],
+            lambda exe: release_help,
+            replace,
+        )
+
     return _run
 
 
@@ -41,7 +112,10 @@ def test_new_import(run):
     assert [x.status for x in p.results] == ["new"] * 3
     assert all(x.exact for x in p.results), [(x.name, x.exact) for x in p.results]
     s = p.settings
-    assert [(x.name, x.path) for x in s.runtimes] == [("llama", r"C:\llama"), ("build-cuda", r"C:\src\llama.cpp\build-cuda\bin")]
+    assert [(x.name, x.path) for x in s.runtimes] == [
+        ("llama", r"C:\llama"),
+        ("build-cuda", r"C:\src\llama.cpp\build-cuda\bin"),
+    ]
     assert s.default_runtime == "llama" and s.model_folders == [M]
     assert s.global_.args == "-t 12 --load-mode none --fit on --flash-attn on" and s.global_.cache_type_k == "q8_0"
     assert s.global_.cache_type_v == ""  # differs between commands -> stays per profile
@@ -50,7 +124,9 @@ def test_new_import(run):
     assert gemma.profiles[0].alias == "" and gemma.profiles[0].ctx_size == 131072
     q4 = next(m for m in p.models if m.file.endswith("qwen.gguf")).profile("qwen-kvq4")
     assert (q4.runtime, q4.cache_type_v, q4.alias) == ("build-cuda", "q4_0", "qwen-kvq4")
-    assert "--host" not in q4.args and p.notes == ["ignored --host, --port in the commands: llama-launcher sets these itself"]
+    assert "--host" not in q4.args and p.notes == [
+        "ignored --host, --port in the commands: llama-launcher sets these itself"
+    ]
     assert "'{\"preserve_thinking\":true}'" in r["qwen-general"].profile.args
 
 
@@ -86,10 +162,13 @@ def test_mismatched_mmproj_kept_in_args(run):
     assert "--mmproj" in r.profile.args and "kept in profile args" in r.detail and r.exact
 
 
-@pytest.mark.parametrize("entries,msg", [
-    ([{"name": "a", "command": [REL, "--temp", "1"]}], "no -m/--model"),
-    ([{"name": "a", "command": [REL, "-m", "x.gguf"]}, {"name": "a", "command": [REL, "-m", "X.gguf"]}], "twice"),
-])
+@pytest.mark.parametrize(
+    "entries,msg",
+    [
+        ([{"name": "a", "command": [REL, "--temp", "1"]}], "no -m/--model"),
+        ([{"name": "a", "command": [REL, "-m", "x.gguf"]}, {"name": "a", "command": [REL, "-m", "X.gguf"]}], "twice"),
+    ],
+)
 def test_entry_errors(run, entries, msg):
     p = run(entries)
     assert p.results[-1].status == "error" and msg in p.results[-1].detail

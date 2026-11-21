@@ -35,25 +35,41 @@ def write_gguf(path: Path, meta: dict, version: int = 3) -> Path:
 
 
 def model(path, arch, n_embd, ctx=262144, nextn=0, tokens=50):
-    meta = {"general.architecture": arch, "general.type": "model", "general.name": Path(path).stem,
-            "tokenizer.ggml.tokens": [f"t{i}" for i in range(tokens)],
-            f"{arch}.context_length": ctx, f"{arch}.embedding_length": n_embd}
+    meta = {
+        "general.architecture": arch,
+        "general.type": "model",
+        "general.name": Path(path).stem,
+        "tokenizer.ggml.tokens": [f"t{i}" for i in range(tokens)],
+        f"{arch}.context_length": ctx,
+        f"{arch}.embedding_length": n_embd,
+    }
     if nextn:
         meta[f"{arch}.nextn_predict_layers"] = nextn
     return write_gguf(path, meta)
 
 
 def mmproj(path, proj_dim, audio_dim=None):
-    meta = {"general.architecture": "clip", "general.type": "mmproj", "clip.has_vision_encoder": True,
-            "clip.vision.projection_dim": proj_dim}
+    meta = {
+        "general.architecture": "clip",
+        "general.type": "mmproj",
+        "clip.has_vision_encoder": True,
+        "clip.vision.projection_dim": proj_dim,
+    }
     if audio_dim:
         meta["clip.audio.projection_dim"] = audio_dim
     return write_gguf(path, meta)
 
 
 def draft(path, arch, n_embd=1024):
-    return write_gguf(path, {"general.architecture": arch, "general.type": "model",
-                             f"{arch}.embedding_length": n_embd, f"{arch}.nextn_predict_layers": 4})
+    return write_gguf(
+        path,
+        {
+            "general.architecture": arch,
+            "general.type": "model",
+            f"{arch}.embedding_length": n_embd,
+            f"{arch}.nextn_predict_layers": 4,
+        },
+    )
 
 
 def llm_folder(root: Path) -> Path:

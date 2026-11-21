@@ -92,8 +92,16 @@ def _clear_dir(d: Path) -> None:
 
 
 class ServerManager:
-    def __init__(self, logs_dir: Path, cwd_dir: Path, on_change: Callable[[Status], None] | None = None,
-                 ready_timeout: float = 300, poll: float = 1.0, idle_poll: float = 15.0, stop_timeout: float = 15):
+    def __init__(
+        self,
+        logs_dir: Path,
+        cwd_dir: Path,
+        on_change: Callable[[Status], None] | None = None,
+        ready_timeout: float = 300,
+        poll: float = 1.0,
+        idle_poll: float = 15.0,
+        stop_timeout: float = 15,
+    ):
         self.logs_dir = Path(logs_dir)
         self.cwd_dir = Path(cwd_dir)
         self.on_change = on_change
@@ -134,8 +142,9 @@ class ServerManager:
 
     def is_stale(self, spec: LaunchSpec) -> bool:
         st = self.status
-        return st.active and st.spec is not None and st.spec.key == spec.key and \
-            st.spec.comparable() != spec.comparable()
+        return (
+            st.active and st.spec is not None and st.spec.key == spec.key and st.spec.comparable() != spec.comparable()
+        )
 
     # ---- start ----
     def start(self, spec: LaunchSpec) -> None:
@@ -157,9 +166,14 @@ class ServerManager:
         if gen != self._gen:
             return
         if port_in_use(spec.host, spec.port):
-            self._set(gen, state=State.EXTERNAL, spec=None, pid=None,
-                      external_ids=self._external_ids(spec.connect_host, spec.port, spec.env.get("LLAMA_API_KEY", "")),
-                      message=f"port {spec.port} is already in use by another program")
+            self._set(
+                gen,
+                state=State.EXTERNAL,
+                spec=None,
+                pid=None,
+                external_ids=self._external_ids(spec.connect_host, spec.port, spec.env.get("LLAMA_API_KEY", "")),
+                message=f"port {spec.port} is already in use by another program",
+            )
             return
         note = rotate(self.server_log)
         if note:
@@ -167,16 +181,32 @@ class ServerManager:
         _clear_dir(self.cwd_dir)
         version = spec.version.label() if spec.version else "unknown"
         rt = f"{spec.runtime.name} ({version}) {spec.runtime.exe}" if spec.runtime else "?"
-        header = (f"# llama-launcher server run\n# started: {datetime.now():%Y-%m-%d %H:%M:%S}\n"
-                  f"# profile: {spec.title}\n# runtime: {rt}\n# idle: {spec.idle_mode} {spec.idle_seconds}s\n"
-                  f"# argv: {format_argv(spec.argv)}\n# ---\n")
+        header = (
+            f"# llama-launcher server run\n# started: {datetime.now():%Y-%m-%d %H:%M:%S}\n"
+            f"# profile: {spec.title}\n# runtime: {rt}\n# idle: {spec.idle_mode} {spec.idle_seconds}s\n"
+            f"# argv: {format_argv(spec.argv)}\n# ---\n"
+        )
         self.server_log.write_text(header, encoding="utf-8")
-        self._set(gen, state=State.STARTING, spec=spec, message="loading model", log_path=str(self.server_log),
-                  external_ids=[], n_ctx=None)
+        self._set(
+            gen,
+            state=State.STARTING,
+            spec=spec,
+            message="loading model",
+            log_path=str(self.server_log),
+            external_ids=[],
+            n_ctx=None,
+        )
         try:
             with open(self.server_log, "ab") as fh:
-                proc = subprocess.Popen(spec.argv, cwd=self.cwd_dir, env=spec.env, stdout=fh, stderr=subprocess.STDOUT,
-                                        stdin=subprocess.DEVNULL, creationflags=subprocess.CREATE_NO_WINDOW)
+                proc = subprocess.Popen(
+                    spec.argv,
+                    cwd=self.cwd_dir,
+                    env=spec.env,
+                    stdout=fh,
+                    stderr=subprocess.STDOUT,
+                    stdin=subprocess.DEVNULL,
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                )
         except OSError as e:
             self._set(gen, state=State.FAILED, message=f"couldn't start llama-server: {e}", pid=None)
             return
@@ -209,8 +239,12 @@ class ServerManager:
             time.sleep(min(0.5, self.poll))
         if gen == self._gen:
             self._stop_proc("timeout")
-            self._set(gen, state=State.FAILED, pid=None,
-                      message=f"llama-server didn't become ready within {int(self.ready_timeout)}s")
+            self._set(
+                gen,
+                state=State.FAILED,
+                pid=None,
+                message=f"llama-server didn't become ready within {int(self.ready_timeout)}s",
+            )
 
     def _finish_failed(self, gen: int, proc: subprocess.Popen) -> None:
         code = proc.returncode
@@ -244,8 +278,9 @@ class ServerManager:
                 if sleeping is not None and spec.idle_mode != IdleMode.OFF:
                     if sleeping and spec.idle_mode == IdleMode.STOP:
                         self._stop_proc("idle")
-                        self._set(gen, state=State.STOPPED, pid=None,
-                                  message=f"stopped after {spec.idle_seconds}s idle")
+                        self._set(
+                            gen, state=State.STOPPED, pid=None, message=f"stopped after {spec.idle_seconds}s idle"
+                        )
                         return
                     want = State.SLEEPING if sleeping else State.RUNNING
                     if self.status.state != want:
@@ -303,17 +338,22 @@ class ServerManager:
 
     def check_port(self, host: str, port: int, key: str = "") -> None:
         """STOPPED <-> EXTERNAL, based on whether something else holds the port."""
-        if self.status.state not in (State.STOPPED, State.EXTERNAL):
-            return
+        with self._lock:
+            if self._status.state not in (State.STOPPED, State.EXTERNAL):
+                return
+            # The check below takes ~0.5s. A start in that time takes the port with this app's own
+            # server and bumps _gen, so _set(gen, ...) drops the stale result.
+            gen = self._gen
         connect = connect_host(host)
         if port_in_use(host, port):
             ids = self._external_ids(connect, port, key)
             st = self.status
             if st.state is not State.EXTERNAL or st.external_ids != ids:
-                self._set(state=State.EXTERNAL, external_ids=ids,
-                          message=f"port {port} is in use by another program")
+                self._set(
+                    gen, state=State.EXTERNAL, external_ids=ids, message=f"port {port} is in use by another program"
+                )
         elif self.status.state is State.EXTERNAL:
-            self._set(state=State.STOPPED, external_ids=[], message="")
+            self._set(gen, state=State.STOPPED, external_ids=[], message="")
 
     def watch_port(self, target: Callable[[], tuple[str, int, str]], interval: float = 10.0) -> None:
         def loop():
@@ -322,6 +362,7 @@ class ServerManager:
                     self.check_port(*target())
                 except Exception:
                     log.exception("port watch failed")
+
         try:
             self.check_port(*target())
         except Exception:

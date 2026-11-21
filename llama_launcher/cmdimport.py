@@ -91,11 +91,11 @@ def load_entries(text: str) -> list[Entry]:
     except ValueError as e:
         raise CommandImportError(f"not valid JSON: {e}") from None
     if not isinstance(data, list):
-        raise CommandImportError("expected a JSON list of {\"name\", \"command\"} objects")
+        raise CommandImportError('expected a JSON list of {"name", "command"} objects')
     out = []
     for i, item in enumerate(data):
         if not isinstance(item, dict) or not item.get("name") or not item.get("command"):
-            raise CommandImportError(f"entry {i}: needs \"name\" and \"command\"")
+            raise CommandImportError(f'entry {i}: needs "name" and "command"')
         cmd = item["command"]
         argv = tokenize(cmd) if isinstance(cmd, str) else [str(a) for a in cmd]
         out.append(Entry(str(item["name"]), argv))
@@ -152,8 +152,13 @@ class _Parsed:
         return self.values.get(self.canonical(flag))
 
 
-def plan(entries: list[Entry], settings: Settings, models: list[ModelEntry],
-         help_for: Callable[[str], HelpTable], replace: bool = False) -> Plan:
+def plan(
+    entries: list[Entry],
+    settings: Settings,
+    models: list[ModelEntry],
+    help_for: Callable[[str], HelpTable],
+    replace: bool = False,
+) -> Plan:
     s = copy.deepcopy(settings)
     out = copy.deepcopy(models)
     parsed, results = _parse_entries(entries, help_for)
@@ -174,8 +179,9 @@ def plan(entries: list[Entry], settings: Settings, models: list[ModelEntry],
     return Plan(s, out, [r for _, r in results], changes, notes)
 
 
-def _parse_entries(entries: list[Entry], help_for: Callable[[str], HelpTable]
-                   ) -> tuple[list[_Parsed], list[tuple[int, Result]]]:
+def _parse_entries(
+    entries: list[Entry], help_for: Callable[[str], HelpTable]
+) -> tuple[list[_Parsed], list[tuple[int, Result]]]:
     """The usable commands, and an error result (with its input position) for each one that isn't."""
     parsed: list[_Parsed] = []
     errors: list[tuple[int, Result]] = []
@@ -192,7 +198,9 @@ def _parse_entries(entries: list[Entry], help_for: Callable[[str], HelpTable]
             errors.append((i, Result(e.name, Outcome.ERROR, detail="no -m/--model in the command")))
             continue
         if (norm(model), e.name) in seen:
-            errors.append((i, Result(e.name, Outcome.ERROR, model=model, detail="the input has this model + name twice")))
+            errors.append(
+                (i, Result(e.name, Outcome.ERROR, model=model, detail="the input has this model + name twice"))
+            )
             continue
         seen.add((norm(model), e.name))
         parsed.append(p)
@@ -261,8 +269,9 @@ def _import_profile(p: _Parsed, s: Settings, out: list[ModelEntry], rt: RuntimeE
     prof = _build_profile(p, s, rt, extra)
 
     old = model.profile(p.entry.name)
-    res = Result(p.entry.name, Outcome.NEW, model=model_path, runtime=rt.name, detail="; ".join(detail),
-                 argv=p.entry.argv)
+    res = Result(
+        p.entry.name, Outcome.NEW, model=model_path, runtime=rt.name, detail="; ".join(detail), argv=p.entry.argv
+    )
     if old is not None:
         if old == prof:
             res.status = Outcome.UNCHANGED
@@ -270,7 +279,9 @@ def _import_profile(p: _Parsed, s: Settings, out: list[ModelEntry], rt: RuntimeE
             res.status = Outcome.REPLACED
         else:
             res.status = Outcome.CONFLICT
-            res.detail = "; ".join(filter(None, [res.detail, "a different profile with this name exists (use --replace)"]))
+            res.detail = "; ".join(
+                filter(None, [res.detail, "a different profile with this name exists (use --replace)"])
+            )
     if res.status in (Outcome.NEW, Outcome.REPLACED):
         if new_model:
             out.append(model)
@@ -317,8 +328,10 @@ def _build_profile(p: _Parsed, s: Settings, rt: RuntimeEntry, extra: list[Flag])
         name=p.entry.name,
         alias="" if alias == launch.stem(model_path) else alias,
         ctx_size=int(ctx) if ctx and ctx.isdigit() else 0,
-        **{attr: "" if p.get(flag) in (None, getattr(s.global_, attr)) else p.get(flag)
-           for attr, flag in CACHE_FLAGS.items()},
+        **{
+            attr: "" if p.get(flag) in (None, getattr(s.global_, attr)) else p.get(flag)
+            for attr, flag in CACHE_FLAGS.items()
+        },
         args=_join(rest),
         unset=sorted(k for k in global_flags if k not in p.values),
         runtime="" if rt.name == s.default_runtime else rt.name,
@@ -350,13 +363,16 @@ def _check_exact(r: Result, s: Settings) -> None:
 
 
 def report(p: Plan, show_commands: bool = False) -> str:
-    marks = {Outcome.NEW: "+", Outcome.UNCHANGED: "=", Outcome.CONFLICT: "!", Outcome.REPLACED: "~",
-             Outcome.ERROR: "x"}
+    marks = {Outcome.NEW: "+", Outcome.UNCHANGED: "=", Outcome.CONFLICT: "!", Outcome.REPLACED: "~", Outcome.ERROR: "x"}
     lines = []
     for c in p.setting_changes:
         lines.append(f"  settings: {c}")
     for r in p.results:
-        exact = "" if r.exact is None else ("  (same flags as the command)" if r.exact else "  (FLAGS DIFFER from the command)")
+        exact = (
+            ""
+            if r.exact is None
+            else ("  (same flags as the command)" if r.exact else "  (FLAGS DIFFER from the command)")
+        )
         line = f"{marks[r.status]} {r.status:<9} {r.name:<36} {os.path.basename(r.model)}"
         lines.append(line + (f"  [{r.runtime}]" if r.runtime else "") + exact)
         if r.detail:

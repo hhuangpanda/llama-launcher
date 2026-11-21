@@ -55,8 +55,17 @@ class SidecarPicker(QWidget):
             self.combo.addItem(f"{os.path.basename(p)}   ({os.path.dirname(p)})", p)
         if current and paths.norm(current) not in {paths.norm(p) for p in compatible}:
             self.combo.addItem(f"{os.path.basename(current)}   (not a match for this model)", current)
-        idx = max(0, next((i for i in range(self.combo.count())
-                           if self.combo.itemData(i) and paths.norm(self.combo.itemData(i)) == paths.norm(current)), 0))
+        idx = max(
+            0,
+            next(
+                (
+                    i
+                    for i in range(self.combo.count())
+                    if self.combo.itemData(i) and paths.norm(self.combo.itemData(i)) == paths.norm(current)
+                ),
+                0,
+            ),
+        )
         self.combo.setCurrentIndex(idx if current else 0)
         self.combo.blockSignals(False)
 
@@ -149,12 +158,15 @@ class ProfileEditor(QWidget):
         self._loading = True
         self.model, self.profile = model, profile
         self.file_label.setText(model.file)
-        entry = next((e for e in entries if e.kind is catalog.Kind.MODEL and paths.norm(e.path) == paths.norm(model.file)), None)
+        entry = next(
+            (e for e in entries if e.kind is catalog.Kind.MODEL and paths.norm(e.path) == paths.norm(model.file)), None
+        )
         sug = catalog.suggest(entry, entries) if entry and entry.info else None
         self.mmproj.set_options(model.mmproj, sug.mmproj_candidates if sug else [])
         self.draft.set_options(model.draft, sug.draft_candidates if sug else [])
-        self.mtp_hint.setText("Built-in MTP head: use --spec-type draft-mtp without a draft file."
-                              if sug and sug.builtin_mtp else "")
+        self.mtp_hint.setText(
+            "Built-in MTP head: use --spec-type draft-mtp without a draft file." if sug and sug.builtin_mtp else ""
+        )
         self.name.setText(profile.name)
         self.alias.setText(profile.alias)
         self.alias.setPlaceholderText(stem(model.file))
@@ -169,8 +181,9 @@ class ProfileEditor(QWidget):
         if glob_ctx:
             self.ctx.set_value(profile.ctx_size, glob_ctx, "from global args")
         else:
-            self.ctx.set_value(profile.ctx_size, model_ctx or 0,
-                               "model's trained context; --fit (on by default) lowers it to fit VRAM")
+            self.ctx.set_value(
+                profile.ctx_size, model_ctx or 0, "model's trained context; --fit (on by default) lowers it to fit VRAM"
+            )
         self._select(self.ctk, profile.cache_type_k)
         self._select(self.ctv, profile.cache_type_v)
         self._select(self.idle_mode, profile.idle_mode)

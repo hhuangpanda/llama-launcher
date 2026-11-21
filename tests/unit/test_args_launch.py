@@ -192,8 +192,9 @@ def test_draft_mismatch_blocked(release_help, llm):
     assert not s.ok and "doesn't fit a qwen35 model" in s.diagnostics[0].message
 
 
-@pytest.mark.parametrize("file,ok", [("Qwen3.8-27B-GSQ-RCO-IQ3_XXS.gguf", False),
-                                     ("Qwen3.8-27B-UD-Q2_K_XL.gguf", True)])
+@pytest.mark.parametrize(
+    "file,ok", [("Qwen3.8-27B-GSQ-RCO-IQ3_XXS.gguf", False), ("Qwen3.8-27B-UD-Q2_K_XL.gguf", True)]
+)
 def test_mtp_needs_head(release_help, llm, file, ok):
     d, cache = llm
     s = build(release_help, "--spec-type draft-mtp", model=ModelEntry(str(d / file)), get_info=cache.get)
@@ -210,16 +211,22 @@ def test_mtp_draft_needs_spec_type(release_help, llm):
 
 def test_ctx_over_trained_warns(release_help, llm):
     d, cache = llm
-    s = build(release_help, model=ModelEntry(str(d / "Qwen3.8-27B-UD-Q2_K_XL.gguf")),
-              prof=Profile("p", ctx_size=300000), get_info=cache.get)
+    s = build(
+        release_help,
+        model=ModelEntry(str(d / "Qwen3.8-27B-UD-Q2_K_XL.gguf")),
+        prof=Profile("p", ctx_size=300000),
+        get_info=cache.get,
+    )
     assert s.ok and s.diagnostics[0].level == "warning"
 
 
 def test_model_rows_merge_configured_and_scanned(llm):
     d, _ = llm
     entries = c.scan([str(d)])
-    configured = [ModelEntry(str(d / "Qwen3.8-27B-UD-Q2_K_XL.gguf"), profiles=[Profile("a"), Profile("b")]),
-                  ModelEntry(str(d / "missing.gguf"), profiles=[Profile("x")])]
+    configured = [
+        ModelEntry(str(d / "Qwen3.8-27B-UD-Q2_K_XL.gguf"), profiles=[Profile("a"), Profile("b")]),
+        ModelEntry(str(d / "missing.gguf"), profiles=[Profile("x")]),
+    ]
     rows = {launch.stem(r.model.file): r for r in launch.model_rows(configured, entries)}
     assert len(rows) == 7
     assert [p.name for p in rows["Qwen3.8-27B-UD-Q2_K_XL"].model.profiles] == ["a", "b"]

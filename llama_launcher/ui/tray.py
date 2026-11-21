@@ -136,8 +136,11 @@ class ModelMenu:
             if value is None:
                 a.setText(self._default_ctx_text())
         target = self.c.ctx_save_target(model)
-        self._save.setText(f"Save picked context as default for '{target.name}'" if target
-                           else "Save picked context as default (start a profile first)")
+        self._save.setText(
+            f"Save picked context as default for '{target.name}'"
+            if target
+            else "Save picked context as default (start a profile first)"
+        )
         self._save.setEnabled(bool(picked) and target is not None)
 
     def _ctx_text(self, profile: Profile, use_picked: bool = True) -> str:

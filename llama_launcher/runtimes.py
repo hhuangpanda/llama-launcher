@@ -137,15 +137,20 @@ class RuntimeProbe:
         sig = self._sig(rt)
         if sig not in self._cache:
             self.runs += 1
-            self._cache[sig] = RuntimeInfo(parse_version(self._run(rt, VERSION)),
-                                           parse_help(self._run(rt, HELP)))
+            self._cache[sig] = RuntimeInfo(parse_version(self._run(rt, VERSION)), parse_help(self._run(rt, HELP)))
         return self._cache[sig]
 
     @staticmethod
     def _run(rt: Runtime, flag: str) -> str:
         try:
-            r = subprocess.run(rt.command() + [flag], capture_output=True, text=True, timeout=30,
-                               errors="replace", creationflags=subprocess.CREATE_NO_WINDOW)
+            r = subprocess.run(
+                rt.command() + [flag],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                errors="replace",
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
         except (OSError, subprocess.TimeoutExpired) as e:
             raise RuntimeError(f"runtime '{rt.name}': {flag} failed: {e}") from e
         return r.stdout + r.stderr

@@ -33,8 +33,9 @@ def spec(tmp_path, port=None, profile=None, settings=None, env=None, model_name=
     s = settings or Settings(global_=GlobalOptions(idle_mode="off"))
     s.port = port or free_port()
     base_env = {"SYSTEMROOT": os.environ["SYSTEMROOT"], **(env or {})}
-    return launch.build(s, ModelEntry(str(model)), profile or Profile("p"), rt, info.help_table, info.version,
-                   base_env=base_env, **kw)
+    return launch.build(
+        s, ModelEntry(str(model)), profile or Profile("p"), rt, info.help_table, info.version, base_env=base_env, **kw
+    )
 
 
 def pid_alive(pid: int) -> bool:

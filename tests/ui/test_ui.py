@@ -1,5 +1,8 @@
+import subprocess
+import sys
 import uuid
 import winreg
+from pathlib import Path
 
 import gguf_builder as gb
 import pytest
@@ -16,9 +19,10 @@ from llama_launcher.controller import Controller
 from llama_launcher.launch import ProfileKey
 from llama_launcher.runtimes import Runtime
 from llama_launcher.server import ServerManager, State
-from llama_launcher.single_instance import notify_existing
+from llama_launcher.single_instance import QUIT, SHOW_SETTINGS
 
 TEST_RUN_KEY = r"Software\llama-launcher-test\Run"
+ROOT = Path(__file__).parents[2]
 
 
 @pytest.fixture
@@ -32,8 +36,15 @@ def env(tmp_path, qtbot):
     cfg.settings.global_ = GlobalOptions(idle_mode="off", args="--flash-attn on")
     cfg.save_settings()
     swift = str(llm / "Qwen3.8-27B-Swift-1.5-ajgazin-Orca-MTP-RCO-IQ3_XXS.gguf")
-    cfg.models = [ModelEntry(swift, profiles=[Profile("swift-orca", ctx_size=102400),
-                                              Profile("mtp", args="--spec-type draft-mtp --spec-draft-n-max 2")])]
+    cfg.models = [
+        ModelEntry(
+            swift,
+            profiles=[
+                Profile("swift-orca", ctx_size=102400),
+                Profile("mtp", args="--spec-type draft-mtp --spec-draft-n-max 2"),
+            ],
+        )
+    ]
     cfg.save_profiles()
     mgr = ServerManager(tmp_path / "logs", tmp_path / "cwd", ready_timeout=10, poll=0.05, idle_poll=0.2)
     c = Controller(cfg, mgr, runtime_factory=lambda e: Runtime(e.name, e.path, command_prefix=FAKE))
@@ -63,15 +74,38 @@ def actions(menu: QMenu) -> dict:
     return out
 
 
+def second_launch(name: str, message: bytes) -> subprocess.Popen:
+    """Sends message the way a second app launch does: from its own process, while this one keeps serving."""
+    code = (
+        "import sys\n"
+        "from PySide6.QtCore import QCoreApplication\n"
+        "from llama_launcher.single_instance import notify_existing\n"
+        "app = QCoreApplication([])\n"
+        f"sys.exit(0 if notify_existing({name!r}, {message!r}) else 1)\n"
+    )
+    return subprocess.Popen([sys.executable, "-c", code], cwd=ROOT, creationflags=subprocess.CREATE_NO_WINDOW)
+
+
 # U1 + U10
 def test_settings_single_instance(env, qtbot):
     app, *_ = env
-    w1 = app.open_settings()
-    w2 = app.open_settings()
-    assert w1 is w2 and w1.isVisible()
-    assert notify_existing(app.instance.name)
-    qtbot.waitUntil(lambda: app.window.isVisible())
+    assert app.window is None
+    launch = second_launch(app.instance.name, SHOW_SETTINGS)
+    qtbot.waitUntil(lambda: app.window is not None and app.window.isVisible(), timeout=10000)
+    assert launch.wait(10) == 0  # it found the instance, so a real second launch would exit here
+    assert app.open_settings() is app.window
     assert len([w for w in QApplication.topLevelWidgets() if w.__class__.__name__ == "SettingsWindow"]) == 1
+
+
+# U11
+def test_quit_message_quits_like_the_tray(env, qtbot, monkeypatch):
+    app, *_ = env
+    quits = []
+    monkeypatch.setattr(app, "quit", lambda: quits.append(True))  # the real one would end the test's Qt app
+    launch = second_launch(app.instance.name, QUIT)
+    qtbot.waitUntil(lambda: quits == [True], timeout=10000)
+    assert launch.wait(10) == 0
+    assert app.window is None  # it didn't open Settings instead
 
 
 # U2
@@ -125,6 +159,7 @@ def test_start_from_tray_updates_menu_live(env, qtbot):
 def test_menu_stays_open_on_start(env, qtbot):
     from PySide6.QtCore import QPoint
     from PySide6.QtTest import QTest
+
     app, c, llm, swift = env
     app.tray.rebuild()
     menu = app.tray.menu
@@ -155,8 +190,11 @@ def test_profile_editor_preview_updates_live(env, qtbot):
     app, c, llm, swift = env
     w = app.open_settings()
     w.tabs.setCurrentIndex(4)
-    top = next(w.profiles_tab.tree.topLevelItem(i) for i in range(w.profiles_tab.tree.topLevelItemCount())
-               if w.profiles_tab.tree.topLevelItem(i).text(0).startswith("Qwen3.8-27B-Swift"))
+    top = next(
+        w.profiles_tab.tree.topLevelItem(i)
+        for i in range(w.profiles_tab.tree.topLevelItemCount())
+        if w.profiles_tab.tree.topLevelItem(i).text(0).startswith("Qwen3.8-27B-Swift")
+    )
     w.profiles_tab.tree.setCurrentItem(top.child(1))
     assert "--spec-type draft-mtp" in w.profiles_tab.editor.preview.toPlainText()
     assert w.profiles_tab.editor.ctx.inherit.isChecked()
@@ -178,8 +216,11 @@ def test_profile_editor_preview_updates_live(env, qtbot):
 def test_editing_implicit_model_materializes_it(env):
     app, c, llm, swift = env
     w = app.open_settings()
-    top = next(w.profiles_tab.tree.topLevelItem(i) for i in range(w.profiles_tab.tree.topLevelItemCount())
-               if w.profiles_tab.tree.topLevelItem(i).text(0) == "gemma-4-12B-it-qat-UD-Q4_K_XL")
+    top = next(
+        w.profiles_tab.tree.topLevelItem(i)
+        for i in range(w.profiles_tab.tree.topLevelItemCount())
+        if w.profiles_tab.tree.topLevelItem(i).text(0) == "gemma-4-12B-it-qat-UD-Q4_K_XL"
+    )
     w.profiles_tab.tree.setCurrentItem(top.child(0))
     assert "--spec-draft-model" in w.profiles_tab.editor.preview.toPlainText()
     w.profiles_tab.editor.args.setPlainText("--spec-type draft-mtp --spec-draft-n-max 3")
@@ -224,7 +265,7 @@ def test_copy_model_id_and_curl(env, qtbot):
     app.tray.copy_curl()
     curl = QGuiApplication.clipboard().text()
     assert f"http://127.0.0.1:{c.settings.port}/v1/chat/completions" in curl
-    assert 'Authorization: Bearer dummy' in curl and "Qwen3.8-27B-Swift" in curl
+    assert "Authorization: Bearer dummy" in curl and "Qwen3.8-27B-Swift" in curl
 
 
 # U9
@@ -252,7 +293,9 @@ def test_restart_badge_after_edit(env, qtbot):
     menu = actions(app.tray.menu)
     assert menu["Restart to apply changes"].isVisible()
     menu["Restart to apply changes"].trigger()
-    qtbot.waitUntil(lambda: c.manager.status.state is State.RUNNING and "0.6" in c.manager.status.spec.argv, timeout=10000)
+    qtbot.waitUntil(
+        lambda: c.manager.status.state is State.RUNNING and "0.6" in c.manager.status.spec.argv, timeout=10000
+    )
     app.tray.rebuild()
     assert not actions(app.tray.menu)["Restart to apply changes"].isVisible()
 
@@ -273,16 +316,24 @@ def test_hand_edit_reloads(env, qtbot):
 def test_inherit_toggle_and_minutes(env):
     app, c, llm, swift = env
     w = app.open_settings()
-    top = next(w.profiles_tab.tree.topLevelItem(i) for i in range(w.profiles_tab.tree.topLevelItemCount())
-               if w.profiles_tab.tree.topLevelItem(i).text(0).startswith("Qwen3.8-27B-Swift"))
+    top = next(
+        w.profiles_tab.tree.topLevelItem(i)
+        for i in range(w.profiles_tab.tree.topLevelItemCount())
+        if w.profiles_tab.tree.topLevelItem(i).text(0).startswith("Qwen3.8-27B-Swift")
+    )
     w.profiles_tab.tree.setCurrentItem(top.child(0))
     assert not w.profiles_tab.editor.ctx.inherit.isChecked() and w.profiles_tab.editor.ctx.spin.value() == 102400
     w.profiles_tab.editor.ctx.inherit.setChecked(True)  # back to inherit
-    assert w.profiles_tab.editor.profile.ctx_size == 0 and "--ctx-size" not in w.profiles_tab.editor.preview.toPlainText()
+    assert (
+        w.profiles_tab.editor.profile.ctx_size == 0 and "--ctx-size" not in w.profiles_tab.editor.preview.toPlainText()
+    )
     w.profiles_tab.editor.idle_mode.setCurrentIndex(w.profiles_tab.editor.idle_mode.findData("sleep"))
     w.profiles_tab.editor.idle_seconds.inherit.setChecked(False)
     w.profiles_tab.editor.idle_seconds.spin.setValue(5)
-    assert w.profiles_tab.editor.profile.idle_seconds == 300 and "--sleep-idle-seconds 300" in w.profiles_tab.editor.preview.toPlainText()
+    assert (
+        w.profiles_tab.editor.profile.idle_seconds == 300
+        and "--sleep-idle-seconds 300" in w.profiles_tab.editor.preview.toPlainText()
+    )
     w.global_tab.idle_s.setValue(90)
     assert w.settings.global_.idle_seconds == 5400 and w.global_tab.idle_s.suffix() == " min"
 
@@ -306,6 +357,7 @@ def test_listen_hint(env):
 
 def test_info_button_is_a_tooltip(env, qtbot):
     from PySide6.QtWidgets import QToolButton, QToolTip
+
     app, *_ = env
     w = app.open_settings()
     w.tabs.setCurrentIndex(3)
@@ -327,8 +379,10 @@ def test_status_line_shows_running_context(env, qtbot):
     c.start(ProfileKey(swift.lower(), "swift-orca"))
     lines = app.tray.header_lines
     qtbot.waitUntil(lambda: lines()[0].startswith("Running") and lines()[1].startswith("100k context"), timeout=10000)
-    assert lines() == ("Running Qwen3.8-27B-Swift-1.5-ajgazin-Orca-MTP-RCO-IQ3_XXS / swift-orca",
-                       "100k context, b11860 (df9beac71)")
+    assert lines() == (
+        "Running Qwen3.8-27B-Swift-1.5-ajgazin-Orca-MTP-RCO-IQ3_XXS / swift-orca",
+        "100k context, b11860 (df9beac71)",
+    )
 
 
 def test_long_header_uses_full_width_and_scrolls_at_constant_size(env, qtbot):
@@ -371,7 +425,8 @@ def test_menu_keeps_size_and_stays_on_screen_when_a_model_starts(env, qtbot):
     assert area.contains(menu.geometry())
     assert app.tray.header_lines()[1] == f"port {c.settings.port}"  # second line already present when stopped
     c.start(ProfileKey(swift.lower(), "swift-orca"))
-    qtbot.waitUntil(lambda: c.manager.status.state is State.RUNNING and "context" in app.tray.header_lines()[1],
-                    timeout=10000)
+    qtbot.waitUntil(
+        lambda: c.manager.status.state is State.RUNNING and "context" in app.tray.header_lines()[1], timeout=10000
+    )
     assert menu.size() == size and area.contains(menu.geometry())
     menu.hide()

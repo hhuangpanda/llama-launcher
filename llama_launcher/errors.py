@@ -25,20 +25,37 @@ def _error_lines(lines: list[str]) -> list[str]:
 
 
 _RULES = [
-    ("unknown_argument", re.compile(r"(?:invalid|unknown) argument: (\S+)"),
-     lambda m: f"llama-server rejected the argument {m.group(1)}"),
-    ("file_not_found", re.compile(r"failed to open GGUF file '([^']+)'"),
-     lambda m: f"file not found: {m.group(1)}"),
-    ("mmproj_mismatch", re.compile(r"mismatch between text model \(n_embd = (\d+)\) and mmproj \(n_embd = (\d+)\)"),
-     lambda m: f"the mmproj doesn't fit this model (model {m.group(1)}, mmproj {m.group(2)})"),
-    ("mtp_unavailable", re.compile(r"failed to create MTP context"),
-     lambda m: "MTP speculative decoding failed: the model has no MTP head and no matching draft was given"),
-    ("out_of_memory", re.compile(r"cudaMalloc failed|out of memory|failed to allocate|unable to allocate", re.I),
-     lambda m: "ran out of GPU memory: lower the context size or use a smaller quant"),
-    ("port_in_use", re.compile(r"couldn't bind|address already in use|failed to bind", re.I),
-     lambda m: "the port is already in use"),
-    ("model_load_failed", re.compile(r"failed to load (?:multimodal )?model|error loading model", re.I),
-     lambda m: "the model failed to load"),
+    (
+        "unknown_argument",
+        re.compile(r"(?:invalid|unknown) argument: (\S+)"),
+        lambda m: f"llama-server rejected the argument {m.group(1)}",
+    ),
+    ("file_not_found", re.compile(r"failed to open GGUF file '([^']+)'"), lambda m: f"file not found: {m.group(1)}"),
+    (
+        "mmproj_mismatch",
+        re.compile(r"mismatch between text model \(n_embd = (\d+)\) and mmproj \(n_embd = (\d+)\)"),
+        lambda m: f"the mmproj doesn't fit this model (model {m.group(1)}, mmproj {m.group(2)})",
+    ),
+    (
+        "mtp_unavailable",
+        re.compile(r"failed to create MTP context"),
+        lambda m: "MTP speculative decoding failed: the model has no MTP head and no matching draft was given",
+    ),
+    (
+        "out_of_memory",
+        re.compile(r"cudaMalloc failed|out of memory|failed to allocate|unable to allocate", re.I),
+        lambda m: "ran out of GPU memory: lower the context size or use a smaller quant",
+    ),
+    (
+        "port_in_use",
+        re.compile(r"couldn't bind|address already in use|failed to bind", re.I),
+        lambda m: "the port is already in use",
+    ),
+    (
+        "model_load_failed",
+        re.compile(r"failed to load (?:multimodal )?model|error loading model", re.I),
+        lambda m: "the model failed to load",
+    ),
 ]
 
 
@@ -56,7 +73,9 @@ def classify(exit_code: int | None, lines: list[str]) -> Failure:
         return Failure("crash", msg + (f": {last}" if last else ""))
     tail = errs[-5:] if errs else [strip(line) for line in lines if line.strip()][-5:]
     hexcode = f" (0x{code:08X})" if code > 255 else ""
-    return Failure("other", f"llama-server exited with code {exit_code}{hexcode}" + ("\n" + "\n".join(tail) if tail else ""))
+    return Failure(
+        "other", f"llama-server exited with code {exit_code}{hexcode}" + ("\n" + "\n".join(tail) if tail else "")
+    )
 
 
 def tail(path, n: int = 200) -> list[str]:

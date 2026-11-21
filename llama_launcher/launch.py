@@ -132,8 +132,9 @@ def stem(path: str) -> str:
 def implicit_model(entry: FileEntry, sug: Suggestion) -> ModelEntry:
     """A scanned model with no profiles.toml entry: one default profile with suggested sidecars."""
     args = f"{SPEC_TYPE} {DRAFT_MTP}" if (sug.draft or sug.builtin_mtp) else ""
-    return ModelEntry(entry.path, mmproj=sug.mmproj or "", draft=sug.draft or "",
-                      profiles=[Profile(DEFAULT_PROFILE, args=args)])
+    return ModelEntry(
+        entry.path, mmproj=sug.mmproj or "", draft=sug.draft or "", profiles=[Profile(DEFAULT_PROFILE, args=args)]
+    )
 
 
 @dataclass
@@ -177,8 +178,7 @@ def _field_flags(obj, mapping: dict[str, str], layer: str) -> list[Flag]:
     return [Flag(flag, str(value), layer) for attr, flag in mapping.items() if (value := getattr(obj, attr))]
 
 
-def _raw_flags(text: str, layer: str, help_table: HelpTable, runtime: Runtime | None,
-               diags: Diagnostics) -> list[Flag]:
+def _raw_flags(text: str, layer: str, help_table: HelpTable, runtime: Runtime | None, diags: Diagnostics) -> list[Flag]:
     """Flags typed into an args box, minus the ones the launcher manages; problems go to diags."""
     try:
         flags = parse_text(text, help_table, layer)
@@ -192,8 +192,10 @@ def _raw_flags(text: str, layer: str, help_table: HelpTable, runtime: Runtime | 
     if help_table.canon:
         for f in keep:
             if not help_table.knows(f.flag):
-                diags.error(f"{layer}: {f.flag} is not a flag of this llama-server build"
-                            + (f" ({runtime.name})" if runtime else ""))
+                diags.error(
+                    f"{layer}: {f.flag} is not a flag of this llama-server build"
+                    + (f" ({runtime.name})" if runtime else "")
+                )
     return keep
 
 
@@ -250,8 +252,11 @@ def build(
     host = settings.listen or "127.0.0.1"
     argv = (runtime.command() if runtime else [EXE_NAME]) + [HOST, host, PORT, str(settings.port)] + m.argv()
 
-    env = {k: v for k, v in (base_env if base_env is not None else os.environ).items()
-           if k not in ENV_STRIP and not k.startswith(ENV_STRIP_PREFIXES)}
+    env = {
+        k: v
+        for k, v in (base_env if base_env is not None else os.environ).items()
+        if k not in ENV_STRIP and not k.startswith(ENV_STRIP_PREFIXES)
+    }
     if settings.api_key:
         env["LLAMA_API_KEY"] = settings.api_key
 
@@ -298,8 +303,10 @@ def _validate_files(m: Merger, get_info: Callable[[str], GGUFInfo] | None, diags
     if mi is None:
         return
     if mmproj and os.path.isfile(mmproj) and (pi := info(mmproj)) and not mmproj_fits(mi, pi):
-        diags.error(f"mmproj {os.path.basename(mmproj)} doesn't fit this model "
-            f"(projection {', '.join(map(str, pi.projection_dims)) or '?'} vs model embedding {mi.embedding_length})")
+        diags.error(
+            f"mmproj {os.path.basename(mmproj)} doesn't fit this model "
+            f"(projection {', '.join(map(str, pi.projection_dims)) or '?'} vs model embedding {mi.embedding_length})"
+        )
     di = None
     if draft and os.path.isfile(draft) and (di := info(draft)) and not draft_fits(mi, di):
         diags.error(f"draft {os.path.basename(draft)} (arch {di.arch}) doesn't fit a {mi.arch} model")
@@ -307,7 +314,9 @@ def _validate_files(m: Merger, get_info: Callable[[str], GGUFInfo] | None, diags
     if DRAFT_MTP in spec_types and not draft and mi.nextn_layers == 0:
         diags.error("--spec-type draft-mtp needs a draft file or a model with built-in MTP; this model has neither")
     if di is not None and di.arch.endswith("-assistant") and DRAFT_MTP not in spec_types:
-        diags.error(f"draft {os.path.basename(draft)} is an MTP head: add --spec-type draft-mtp (llama-server crashes without it)")
+        diags.error(
+            f"draft {os.path.basename(draft)} is an MTP head: add --spec-type draft-mtp (llama-server crashes without it)"
+        )
     ctx = val(CTX_SIZE)
     if ctx and ctx.isdigit() and mi.context_length and int(ctx) > mi.context_length:
         diags.warn(f"ctx-size {ctx} is larger than the model's trained context ({mi.context_length})")

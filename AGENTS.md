@@ -9,7 +9,8 @@ Test-case IDs used in test names and comments (A1, P7, U3...) are in `docs/test-
 - Tests: `.venv\Scripts\python.exe -m pytest`. Real-binary tests are opt-in (`-m real`) and read
   `LLAMA_LAUNCHER_TEST_MODELS` / `LLAMA_LAUNCHER_TEST_RUNTIMES` from the environment or the git-ignored
   `.env` (see `.env.example`); never hard-code machine paths.
-- Lint: `.venv\Scripts\python.exe -m ruff check .` (config in `pyproject.toml`).
+- Lint and format: `.venv\Scripts\python.exe -m ruff check .` and `.venv\Scripts\python.exe -m ruff format .`
+  (config in `pyproject.toml`); run both before committing.
 - Build: `.venv\Scripts\python.exe tools\build.py` -> `dist\llama-launcher\`.
 - Imports are absolute (`from llama_launcher.x import y`).
 

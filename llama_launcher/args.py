@@ -133,6 +133,8 @@ class Merger:
 
 def format_argv(argv: list[str]) -> str:
     """Readable one-line command for logs and the preview box."""
+
     def q(a: str) -> str:
         return f'"{a}"' if (not a or any(c.isspace() for c in a)) else a
+
     return " ".join(q(a) for a in argv)

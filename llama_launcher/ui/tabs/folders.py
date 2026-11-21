@@ -85,8 +85,13 @@ class FoldersTab(SettingsTab):
                 match = "projection " + ", ".join(map(str, info.projection_dims))
             elif info:
                 match = f"embedding {info.embedding_length}" + (" + MTP" if info.nextn_layers else "")
-            vals = (os.path.basename(e.path), e.kind.value + (f" ({e.error})" if e.error else ""),
-                    info.arch if info else "", match, os.path.dirname(e.path))
+            vals = (
+                os.path.basename(e.path),
+                e.kind.value + (f" ({e.error})" if e.error else ""),
+                info.arch if info else "",
+                match,
+                os.path.dirname(e.path),
+            )
             for col, text in enumerate(vals):
                 self.file_table.setItem(i, col, QTableWidgetItem(text))
         self.file_table.resizeColumnsToContents()

@@ -9,14 +9,17 @@ LOGS = FIXTURES / "logs"
 
 
 # E1
-@pytest.mark.parametrize("name,code,kind,text", [
-    ("unknown-argument", 1, "unknown_argument", "rejected the argument --bogus-flag"),
-    ("file-not-found", 1, "file_not_found", r"does-not-exist.gguf"),
-    ("mmproj-mismatch", 1, "mmproj_mismatch", "model 3840, mmproj 2048"),
-    ("mtp-without-head", 1, "mtp_unavailable", "no MTP head"),
-    ("draft-mismatch", 3221225477, "crash", "access violation"),
-    ("synthetic-oom", 1, "out_of_memory", "ran out of GPU memory"),
-])
+@pytest.mark.parametrize(
+    "name,code,kind,text",
+    [
+        ("unknown-argument", 1, "unknown_argument", "rejected the argument --bogus-flag"),
+        ("file-not-found", 1, "file_not_found", r"does-not-exist.gguf"),
+        ("mmproj-mismatch", 1, "mmproj_mismatch", "model 3840, mmproj 2048"),
+        ("mtp-without-head", 1, "mtp_unavailable", "no MTP head"),
+        ("draft-mismatch", 3221225477, "crash", "access violation"),
+        ("synthetic-oom", 1, "out_of_memory", "ran out of GPU memory"),
+    ],
+)
 def test_real_failure_logs(name, code, kind, text):
     f = errors.classify(code, errors.tail(LOGS / f"{name}.log"))
     assert f.kind == kind and text in f.message

@@ -28,7 +28,7 @@ def test_edit_preserves_comments_and_other_content(cfg):
     cfg.models[0].profile("y").args = "--temp 0.5"
     cfg.save_profiles()
     out = cfg.profiles_path.read_text()
-    assert "# my header" in out and "ctx_size = 4096  # measured" in out and '--temp 0.5' in out
+    assert "# my header" in out and "ctx_size = 4096  # measured" in out and "--temp 0.5" in out
     assert "file = 'C:\\m\\a.gguf'" in out  # literal string, no escaping
 
 
@@ -68,15 +68,18 @@ def test_default_values_are_dropped(cfg):
 
 
 # F3
-@pytest.mark.parametrize("text,msg", [
-    ("port = ", "settings.toml"),
-    ("port = 'x'", "must be int"),
-    ("port = 70000", "1-65535"),
-    ("bogus = 1", "unknown key"),
-    ("[global]\nidle_mode = 'nap'", "idle_mode"),
-    ("[global]\ncache_type_k = 'q3'", "cache_type_k"),
-    ("[[runtimes]]\nname = 'a'", "needs 'name' and 'path'"),
-])
+@pytest.mark.parametrize(
+    "text,msg",
+    [
+        ("port = ", "settings.toml"),
+        ("port = 'x'", "must be int"),
+        ("port = 70000", "1-65535"),
+        ("bogus = 1", "unknown key"),
+        ("[global]\nidle_mode = 'nap'", "idle_mode"),
+        ("[global]\ncache_type_k = 'q3'", "cache_type_k"),
+        ("[[runtimes]]\nname = 'a'", "needs 'name' and 'path'"),
+    ],
+)
 def test_invalid_settings_keep_last_good(cfg, text, msg):
     cfg.settings.port = 1234
     cfg.save_settings()
@@ -87,12 +90,15 @@ def test_invalid_settings_keep_last_good(cfg, text, msg):
     assert cfg.settings.port == 1234
 
 
-@pytest.mark.parametrize("text,msg", [
-    ("[[models]]\nmmproj = 'x'", "'file' is required"),
-    ("[[models]]\nfile='a'\n[[models.profiles]]\nname='p'\n[[models.profiles]]\nname='p'", "duplicated"),
-    ("[[models]]\nfile='a'\n[[models]]\nfile='A'", "listed twice"),
-    ("[[models]]\nfile='a'\n[[models.profiles]]\nname='p'\nctx_size='big'", "must be int"),
-])
+@pytest.mark.parametrize(
+    "text,msg",
+    [
+        ("[[models]]\nmmproj = 'x'", "'file' is required"),
+        ("[[models]]\nfile='a'\n[[models.profiles]]\nname='p'\n[[models.profiles]]\nname='p'", "duplicated"),
+        ("[[models]]\nfile='a'\n[[models]]\nfile='A'", "listed twice"),
+        ("[[models]]\nfile='a'\n[[models.profiles]]\nname='p'\nctx_size='big'", "must be int"),
+    ],
+)
 def test_invalid_profiles(cfg, text, msg):
     cfg.profiles_path.write_text(text)
     with pytest.raises(ConfigError, match=msg):
@@ -110,6 +116,7 @@ def test_changed_on_disk(cfg):
 
 
 # F5 is in test_launch (missing files)
+
 
 # F6
 def test_api_key_plain_text(cfg):

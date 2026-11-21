@@ -83,6 +83,7 @@ GGUF fixtures are tiny header-only files written by a test helper. `tests/real` 
 | P12 | quit while starting | spawn aborted, nothing orphaned |
 | P13 | API key enabled | child env has `LLAMA_API_KEY`; argv and log don't contain it |
 | P14 | listen 0.0.0.0 | `--host 0.0.0.0`; Open web UI still uses 127.0.0.1 |
+| P15 | start while the port watcher is mid-check | own server not reported as another program (`EXTERNAL`) |
 
 ### Command-line import (unit)
 
@@ -124,6 +125,7 @@ GGUF fixtures are tiny header-only files written by a test helper. `tests/real` 
 | U8 | Copy model id / curl | clipboard holds alias / valid curl with port (and key header if enabled) |
 | U9 | launch at startup toggle | Run key created/removed with the right command line |
 | U10 | second app instance | exits immediately, first instance opens Settings |
+| U11 | `llama-launcher --quit` (quit message) | running instance quits the same way as the tray's Quit; Settings not opened |
 
 ### Real (opt-in, `pytest -m real`)
 
@@ -152,4 +154,5 @@ GGUF fixtures are tiny header-only files written by a test helper. `tests/real` 
 | no dup context entries (bug 1) | F2 |
 | mixed sidecars in one folder (bug 2) | C1, C2, X2, X3 |
 | settings window (bug 3) | U1, U2, U10 |
+| quit a running instance (build script) | U11 |
 | flags picked up on restart (bug 4) | P7, P8 |

@@ -152,8 +152,14 @@ def parse_settings(doc, where="settings.toml") -> Settings:
     data = doc.unwrap() if hasattr(doc, "unwrap") else dict(doc)
     s = _fill(Settings, data, where)
     s.global_ = _fill(GlobalOptions, data.get("global", {}), f"{where} [global]")
-    _validate_options(f"{where} [global]", s.global_.idle_mode, s.global_.idle_seconds,
-                      s.global_.cache_type_k, s.global_.cache_type_v, allow_empty=False)
+    _validate_options(
+        f"{where} [global]",
+        s.global_.idle_mode,
+        s.global_.idle_seconds,
+        s.global_.cache_type_k,
+        s.global_.cache_type_v,
+        allow_empty=False,
+    )
     if not 1 <= s.port <= 65535:
         raise ConfigError(f"{where}: port must be 1-65535")
     for i, r in enumerate(data.get("runtimes", [])):
@@ -187,8 +193,14 @@ def parse_profiles(doc, where="profiles.toml") -> list[ModelEntry]:
             if not prof.name or prof.name in names:
                 raise ConfigError(f"{w}.profiles[{j}]: profile name missing or duplicated")
             names.add(prof.name)
-            _validate_options(f"{w}.profiles[{j}]", prof.idle_mode, prof.idle_seconds,
-                              prof.cache_type_k, prof.cache_type_v, allow_empty=True)
+            _validate_options(
+                f"{w}.profiles[{j}]",
+                prof.idle_mode,
+                prof.idle_seconds,
+                prof.cache_type_k,
+                prof.cache_type_v,
+                allow_empty=True,
+            )
             entry.profiles.append(prof)
         out.append(entry)
     return out
@@ -280,8 +292,10 @@ class Config:
         doc = self._pdoc
         current = doc.get("models") or []
         same_shape = len(current) == len(self.models) and all(
-            norm(t["file"]) == norm(m.file) and [p["name"] for p in t.get("profiles", [])] == [p.name for p in m.profiles]
-            for t, m in zip(current, self.models, strict=True))
+            norm(t["file"]) == norm(m.file)
+            and [p["name"] for p in t.get("profiles", [])] == [p.name for p in m.profiles]
+            for t, m in zip(current, self.models, strict=True)
+        )
         if same_shape:
             for t, m in zip(current, self.models, strict=True):
                 _sync(t, m, keep_defaults=("file",))

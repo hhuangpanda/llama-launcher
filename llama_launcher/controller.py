@@ -35,8 +35,13 @@ class Controller(QObject):
     config_changed = Signal()
     config_error = Signal(str)
 
-    def __init__(self, config: Config | None = None, manager: ServerManager | None = None,
-                 runtime_factory=None, watch: bool = True):
+    def __init__(
+        self,
+        config: Config | None = None,
+        manager: ServerManager | None = None,
+        runtime_factory=None,
+        watch: bool = True,
+    ):
         super().__init__()
         self.config = config or Config(paths.settings_file(), paths.profiles_file())
         self.probe = RuntimeProbe()
@@ -135,14 +140,25 @@ class Controller(QObject):
         except RuntimeError as e:
             return rt, None, str(e)
 
-    def build(self, model: ModelEntry, profile: Profile, settings: Settings | None = None,
-              ctx_override: int | None = None) -> LaunchSpec:
+    def build(
+        self, model: ModelEntry, profile: Profile, settings: Settings | None = None, ctx_override: int | None = None
+    ) -> LaunchSpec:
         settings = settings or self.settings
         rt, info, problem = self.runtime(settings, profile)
-        spec = launch.build(settings, model, profile, rt if info else None, info.help_table if info else None,
-                            info.version if info else None, ctx_override=ctx_override, get_info=self.info_cache.get)
+        spec = launch.build(
+            settings,
+            model,
+            profile,
+            rt if info else None,
+            info.help_table if info else None,
+            info.version if info else None,
+            ctx_override=ctx_override,
+            get_info=self.info_cache.get,
+        )
         if problem:
-            spec.diagnostics = launch.Diagnostics(d for d in spec.diagnostics if "no llama.cpp runtime" not in d.message)
+            spec.diagnostics = launch.Diagnostics(
+                d for d in spec.diagnostics if "no llama.cpp runtime" not in d.message
+            )
             spec.diagnostics.insert(0, launch.Diagnostic(launch.Level.ERROR, problem))
         return spec
 

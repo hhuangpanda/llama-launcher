@@ -40,8 +40,10 @@ def smallest(entries, pred=lambda e: True):
 
 
 def settings(idle="off", seconds=3600):
-    return Settings(port=free_port(), global_=GlobalOptions(idle_mode=idle, idle_seconds=seconds,
-                                                         args="--flash-attn on --fit on --parallel 1"))
+    return Settings(
+        port=free_port(),
+        global_=GlobalOptions(idle_mode=idle, idle_seconds=seconds, args="--flash-attn on --fit on --parallel 1"),
+    )
 
 
 def spec_for(s, model, profile):
@@ -51,10 +53,12 @@ def spec_for(s, model, profile):
 
 
 def chat(spec):
-    req = urllib.request.Request(f"{spec.base_url}/v1/chat/completions", method="POST",
-                                 data=json.dumps({"messages": [{"role": "user", "content": "Say hi"}],
-                                                  "max_tokens": 8}).encode(),
-                                 headers={"Content-Type": "application/json"})
+    req = urllib.request.Request(
+        f"{spec.base_url}/v1/chat/completions",
+        method="POST",
+        data=json.dumps({"messages": [{"role": "user", "content": "Say hi"}], "max_tokens": 8}).encode(),
+        headers={"Content-Type": "application/json"},
+    )
     with urllib.request.urlopen(req, timeout=120) as r:
         return json.loads(r.read())
 
@@ -76,7 +80,9 @@ def test_real_runtimes():
         pytest.skip("set LLAMA_LAUNCHER_TEST_RUNTIMES")
     for path in RUNTIMES:
         info = probe.info(Runtime("test", path))
-        assert info.version.build and all(info.help_table.knows(f) for f in ("--ctx-size", "--spec-type", "--sleep-idle-seconds"))
+        assert info.version.build and all(
+            info.help_table.knows(f) for f in ("--ctx-size", "--spec-type", "--sleep-idle-seconds")
+        )
 
 
 # X1: smallest model with its suggested sidecars loads, answers and stops
@@ -100,6 +106,7 @@ def test_flat_folder_pairing_loads(mgr, entries):
     def crowded(e):
         same_dir = [x for x in entries if x.kind is catalog.Kind.MMPROJ and x.directory == e.directory]
         return len(same_dir) > 1 and catalog.suggest(e, entries).mmproj
+
     e = smallest(entries, crowded)
     if e is None:
         pytest.skip("no model shares its folder with more than one mmproj")
@@ -111,7 +118,9 @@ def test_flat_folder_pairing_loads(mgr, entries):
 # X3: a mismatched mmproj is refused before anything starts
 def test_wrong_mmproj_blocked(mgr, entries):
     e = smallest(entries)
-    wrong = next((x for x in entries if x.kind is catalog.Kind.MMPROJ and not catalog.mmproj_fits(e.info, x.info)), None)
+    wrong = next(
+        (x for x in entries if x.kind is catalog.Kind.MMPROJ and not catalog.mmproj_fits(e.info, x.info)), None
+    )
     if wrong is None:
         pytest.skip("no mismatching mmproj in the folder")
     mgr.start(spec_for(settings(), ModelEntry(e.path, mmproj=wrong.path), Profile("x", ctx_size=4096)))

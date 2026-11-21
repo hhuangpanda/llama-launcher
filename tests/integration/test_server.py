@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from helpers import FIXTURES, PYTHON, free_port, pid_alive, spec, wait_for
 
+from llama_launcher import server
 from llama_launcher.config import GlobalOptions, Profile, Settings
 from llama_launcher.paths import read_text
 from llama_launcher.server import ServerManager, State, http_json
@@ -16,8 +17,15 @@ from llama_launcher.server import ServerManager, State, http_json
 @pytest.fixture
 def mgr(tmp_path):
     states = []
-    m = ServerManager(tmp_path / "logs", tmp_path / "cwd", on_change=lambda s: states.append(s.state),
-                      ready_timeout=10, poll=0.05, idle_poll=0.1, stop_timeout=5)
+    m = ServerManager(
+        tmp_path / "logs",
+        tmp_path / "cwd",
+        on_change=lambda s: states.append(s.state),
+        ready_timeout=10,
+        poll=0.05,
+        idle_poll=0.1,
+        stop_timeout=5,
+    )
     m.states = states
     yield m
     m.shutdown()
@@ -94,8 +102,10 @@ def test_invalid_spec_fails_without_spawning(mgr, tmp_path):
 # P5
 def test_foreign_port_holder_untouched(mgr, tmp_path):
     port = free_port()
-    foreign = subprocess.Popen(FAKE_CMD + ["--host", "127.0.0.1", "--port", str(port), "--alias", "theirs"],
-                               creationflags=subprocess.CREATE_NO_WINDOW)
+    foreign = subprocess.Popen(
+        FAKE_CMD + ["--host", "127.0.0.1", "--port", str(port), "--alias", "theirs"],
+        creationflags=subprocess.CREATE_NO_WINDOW,
+    )
     try:
         assert wait_for(lambda: _health(port))
         mgr.check_port("127.0.0.1", port)
@@ -111,6 +121,25 @@ def test_foreign_port_holder_untouched(mgr, tmp_path):
     assert wait_for(lambda: (mgr.check_port("127.0.0.1", port), mgr.status.state is State.STOPPED)[1])
 
 
+# P15
+def test_start_during_port_watch_is_not_external(mgr, tmp_path, monkeypatch):
+    s = spec(tmp_path)
+    real_port_in_use = server.port_in_use
+    watcher_checking = []
+
+    def port_in_use(listen, port):
+        if not watcher_checking:  # the watcher's check is underway: the user starts a model now
+            watcher_checking.append(True)
+            mgr.start(s)
+            assert running(mgr)  # this app's own llama-server holds the port when the check finishes
+        return real_port_in_use(listen, port)
+
+    monkeypatch.setattr(server, "port_in_use", port_in_use)
+    mgr.check_port(s.host, s.port)
+    assert mgr.status.state is State.RUNNING
+    assert State.EXTERNAL not in mgr.states
+
+
 FAKE_CMD = [PYTHON, "-I", str(FIXTURES / "fake_server.py")]
 
 
@@ -123,10 +152,23 @@ def _health(port):
 
 # P6
 def test_child_dies_with_app(tmp_path):
-    env = dict(os.environ, PYTHONPATH=os.pathsep.join([str(Path(__file__).parents[2]), str(Path(__file__).parents[1]),
-                                                        *[p for p in sys.path if p.endswith("site-packages")]]))
-    app = subprocess.Popen([PYTHON, str(FIXTURES / "manager_child.py"), str(tmp_path)], env=env,
-                           stdout=subprocess.PIPE, text=True, creationflags=subprocess.CREATE_NO_WINDOW)
+    env = dict(
+        os.environ,
+        PYTHONPATH=os.pathsep.join(
+            [
+                str(Path(__file__).parents[2]),
+                str(Path(__file__).parents[1]),
+                *[p for p in sys.path if p.endswith("site-packages")],
+            ]
+        ),
+    )
+    app = subprocess.Popen(
+        [PYTHON, str(FIXTURES / "manager_child.py"), str(tmp_path)],
+        env=env,
+        stdout=subprocess.PIPE,
+        text=True,
+        creationflags=subprocess.CREATE_NO_WINDOW,
+    )
     try:
         child_pid = int(app.stdout.readline())
         assert pid_alive(child_pid)
@@ -214,7 +256,9 @@ def test_quit_while_starting(mgr, tmp_path):
 
 # P13
 def test_api_key_in_env_only(mgr, tmp_path):
-    s = spec(tmp_path, settings=Settings(api_key="sekrit-dummy", global_=GlobalOptions(idle_mode="sleep", idle_seconds=60)))
+    s = spec(
+        tmp_path, settings=Settings(api_key="sekrit-dummy", global_=GlobalOptions(idle_mode="sleep", idle_seconds=60))
+    )
     mgr.start(s)
     assert running(mgr)
     text = (tmp_path / "logs" / "server.log").read_text()
@@ -242,7 +286,9 @@ def test_server_log_rotation(mgr, tmp_path):
     assert (logs / "server.prev.log").read_text() == first
     mgr.start(spec(tmp_path, port=mgr.status.spec.port))
     # read_text retries: the poll can land while the server thread is renaming server.log onto server.prev.log
-    assert wait_for(lambda: mgr.status.state is State.RUNNING and "invalid argument" not in read_text(logs / "server.prev.log"))
+    assert wait_for(
+        lambda: mgr.status.state is State.RUNNING and "invalid argument" not in read_text(logs / "server.prev.log")
+    )
     assert sorted(p.name for p in logs.iterdir()) == ["server.log", "server.prev.log"]
 
 
@@ -253,6 +299,7 @@ def test_locked_prev_log_does_not_block_start(mgr, tmp_path):
     (logs / "server.log").write_text("old")
     (logs / "server.prev.log").write_text("older")
     import msvcrt
+
     with open(logs / "server.prev.log", "r+b") as f:
         msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
         mgr.start(spec(tmp_path))

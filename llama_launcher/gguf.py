@@ -9,8 +9,7 @@ from pathlib import Path
 
 MAGIC = b"GGUF"
 
-_SCALARS = {0: "<B", 1: "<b", 2: "<H", 3: "<h", 4: "<I", 5: "<i", 6: "<f", 7: "<?",
-            10: "<Q", 11: "<q", 12: "<d"}
+_SCALARS = {0: "<B", 1: "<b", 2: "<H", 3: "<h", 4: "<I", 5: "<i", 6: "<f", 7: "<?", 10: "<Q", 11: "<q", 12: "<d"}
 _STRING, _ARRAY = 8, 9
 
 
@@ -89,8 +88,11 @@ def read_metadata(path: str | Path) -> dict:
 
 def info_from_metadata(path: str, meta: dict) -> GGUFInfo:
     arch = str(meta.get("general.architecture") or "")
-    dims = tuple(int(meta[k]) for k in ("clip.vision.projection_dim", "clip.audio.projection_dim")
-                 if isinstance(meta.get(k), int))
+    dims = tuple(
+        int(meta[k])
+        for k in ("clip.vision.projection_dim", "clip.audio.projection_dim")
+        if isinstance(meta.get(k), int)
+    )
     return GGUFInfo(
         path=str(path),
         arch=arch,

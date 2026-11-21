@@ -7,8 +7,14 @@ from collections.abc import Callable
 
 
 class Marquee:
-    def __init__(self, limit: int, measure: Callable[[str], int] = len, step_ms: int = 250,
-                 start_hold_ms: int = 1000, hold_ms: int = 1000):
+    def __init__(
+        self,
+        limit: int,
+        measure: Callable[[str], int] = len,
+        step_ms: int = 250,
+        start_hold_ms: int = 1000,
+        hold_ms: int = 1000,
+    ):
         self.limit = limit
         self.measure = measure
         self.step_ms = step_ms
@@ -28,7 +34,7 @@ class Marquee:
 
     def view(self) -> str:
         """The longest run from the current offset that fits the limit."""
-        rest = self.text[self.offset:]
+        rest = self.text[self.offset :]
         n = len(rest)
         while n > 0 and self.measure(rest[:n]) > self.limit:
             n -= 1
@@ -42,7 +48,7 @@ class Marquee:
         if self.offset == 0:
             if self._held >= self.start_hold_ms:  # the start stays readable for start_hold_ms
                 self.offset, self._held = 1, 0
-        elif self.measure(self.text[self.offset:]) > self.limit:
+        elif self.measure(self.text[self.offset :]) > self.limit:
             self.offset, self._held = self.offset + 1, 0
         elif self._held >= self.hold_ms:  # the end stays for hold_ms, then back to the start
             self.offset, self._held = 0, 0

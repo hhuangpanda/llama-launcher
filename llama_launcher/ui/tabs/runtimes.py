@@ -45,7 +45,8 @@ class RuntimesTab(SettingsTab):
         rm.clicked.connect(self._remove)
         self.default = QComboBox()
         self.default.currentIndexChanged.connect(
-            lambda _: self.set_field(self.owner.settings, "default_runtime", self.default.currentData() or ""))
+            lambda _: self.set_field(self.owner.settings, "default_runtime", self.default.currentData() or "")
+        )
         row.addWidget(add)
         row.addWidget(rm)
         row.addStretch()
@@ -83,8 +84,12 @@ class RuntimesTab(SettingsTab):
         if problem:
             QMessageBox.warning(self, "Not a llama.cpp folder", problem)
             return
-        name, ok = QInputDialog.getText(self, "Runtime name", "Name for this llama.cpp build:",
-                                        text=os.path.basename(folder.rstrip("\\")) or "llama")
+        name, ok = QInputDialog.getText(
+            self,
+            "Runtime name",
+            "Name for this llama.cpp build:",
+            text=os.path.basename(folder.rstrip("\\")) or "llama",
+        )
         name = name.strip()
         if not ok or not name:
             return

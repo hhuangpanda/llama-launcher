@@ -1,4 +1,4 @@
-"""Entry point: single-instance check, then the tray app."""
+"""Entry point: single-instance check, then the tray app. `--quit` asks a running instance to quit."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 from llama_launcher import paths
 from llama_launcher.controller import Controller
 from llama_launcher.logs import setup_app_log
-from llama_launcher.single_instance import InstanceServer, notify_existing
+from llama_launcher.single_instance import QUIT, InstanceServer, notify_existing
 
 log = logging.getLogger("llama_launcher")
 
@@ -24,9 +24,15 @@ class App:
         self.c = controller
         self.window = None
         self.instance = InstanceServer(instance_name)
-        self.instance.message.connect(lambda _: self.open_settings())
+        self.instance.message.connect(self._on_message)
         self.tray = Tray(controller, self.open_settings, self.quit)
         controller.manager.watch_port(controller.port_target)
+
+    def _on_message(self, message: str) -> None:
+        if message == QUIT.decode():
+            self.quit()  # same as the tray's Quit: unsaved Settings changes are asked about first
+        else:
+            self.open_settings()
 
     def open_settings(self):
         if self.window is None:
@@ -46,6 +52,8 @@ def main() -> int:
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
     app.setApplicationName("llama-launcher")
+    if "--quit" in sys.argv[1:]:
+        return 0 if notify_existing(message=QUIT) else 1  # 1: none running
     if notify_existing():
         return 0
     setup_app_log(paths.logs_dir())

@@ -66,8 +66,14 @@ def main():
             if not self._authed():
                 return self._send(401, {"error": "Invalid API Key"})
             if self.path == "/props":
-                return self._send(200, {"is_sleeping": state["sleeping"], "model_alias": arg("--alias"),
-                                        "default_generation_settings": {"n_ctx": int(arg("--ctx-size", "4096"))}})
+                return self._send(
+                    200,
+                    {
+                        "is_sleeping": state["sleeping"],
+                        "model_alias": arg("--alias"),
+                        "default_generation_settings": {"n_ctx": int(arg("--ctx-size", "4096"))},
+                    },
+                )
             if self.path == "/v1/models":
                 return self._send(200, {"data": [{"id": arg("--alias", arg("--model"))}]})
             self._send(404, {})
@@ -81,7 +87,9 @@ def main():
     ThreadingHTTPServer.allow_reuse_address = False
     srv = ThreadingHTTPServer((arg("--host", "127.0.0.1"), int(arg("--port", "9931"))), H)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
-    print(f"0.00.100.000 I srv  llama_server: listening on http://{arg('--host')}:{arg('--port')}", file=out, flush=True)
+    print(
+        f"0.00.100.000 I srv  llama_server: listening on http://{arg('--host')}:{arg('--port')}", file=out, flush=True
+    )
     crash = os.environ.get("FAKE_CRASH_AFTER")
     while True:
         time.sleep(0.1)

@@ -39,7 +39,9 @@ def test_help_aliases_and_values(release_help):
 # R3
 def test_probe_cached_until_exe_changes(tmp_path):
     script = tmp_path / "fake.py"
-    script.write_text("import sys; print('version: 1.0 (build 7, commit abc)' if '--version' in sys.argv else '--ctx-size N   x')")
+    script.write_text(
+        "import sys; print('version: 1.0 (build 7, commit abc)' if '--version' in sys.argv else '--ctx-size N   x')"
+    )
     rt = Runtime("fake", str(tmp_path), command_prefix=[sys.executable, str(script)])
     probe = RuntimeProbe()
     assert probe.info(rt).version.build == 7

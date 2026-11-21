@@ -102,13 +102,19 @@ class SettingsWindow(QWidget):
             return
         self.c.save(copy.deepcopy(self.settings), copy.deepcopy(self.models))
         self._set_dirty(False)
-        self.status.setText("Saved." + ("  The running model has changes: use Restart to apply in the tray."
-                                        if self.c.is_stale() else ""))
+        self.status.setText(
+            "Saved."
+            + ("  The running model has changes: use Restart to apply in the tray." if self.c.is_stale() else "")
+        )
 
     def closeEvent(self, e: QCloseEvent) -> None:
         if self.dirty:
-            r = QMessageBox.question(self, "Unsaved changes", "Save changes before closing?",
-                                     QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel)
+            r = QMessageBox.question(
+                self,
+                "Unsaved changes",
+                "Save changes before closing?",
+                QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
+            )
             if r == QMessageBox.Cancel:
                 e.ignore()
                 return

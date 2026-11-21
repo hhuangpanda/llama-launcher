@@ -24,11 +24,14 @@ def test_reads_model_mmproj_draft(tmp_path):
 
 
 # G2
-@pytest.mark.parametrize("content,msg", [
-    (b"", "truncated"),
-    (b"NOPE" + b"\0" * 20, "not a GGUF"),
-    (b"GGUF\x03\0\0\0" + b"\0" * 8 + b"\x05" + b"\0" * 7 + b"\x10", "truncated"),
-])
+@pytest.mark.parametrize(
+    "content,msg",
+    [
+        (b"", "truncated"),
+        (b"NOPE" + b"\0" * 20, "not a GGUF"),
+        (b"GGUF\x03\0\0\0" + b"\0" * 8 + b"\x05" + b"\0" * 7 + b"\x10", "truncated"),
+    ],
+)
 def test_bad_files_raise(tmp_path, content, msg):
     f = tmp_path / "bad.gguf"
     f.write_bytes(content)
@@ -43,8 +46,9 @@ def test_v2_rejected(tmp_path):
 
 # G3
 def test_values_after_arrays_are_read(tmp_path):
-    f = gb.write_gguf(tmp_path / "x.gguf", {"s": ["a", "bb"], "n": [1, 2, 3], "f": 1.5, "b": True,
-                                            "general.architecture": "late"})
+    f = gb.write_gguf(
+        tmp_path / "x.gguf", {"s": ["a", "bb"], "n": [1, 2, 3], "f": 1.5, "b": True, "general.architecture": "late"}
+    )
     meta = read_metadata(f)
     assert meta["general.architecture"] == "late" and meta["f"] == 1.5 and meta["b"] is True
 
@@ -56,10 +60,18 @@ def test_flat_llm_folder_pairs_like_the_real_one(tmp_path):
     expect = {
         "Qwen3.6-35B-A3B-UD-Q4_K_M": ("Qwen3.6-35B-A3B-mmproj-F16", None, False),
         "Qwen3.8-27B-GSQ-RCO-IQ3_XXS": ("Qwen3.8-27B-mmproj-blackfrost-ABLITERATED-Q8_0", None, False),
-        "Qwen3.8-27B-Swift-1.5-ajgazin-Orca-MTP-RCO-IQ3_XXS": ("Qwen3.8-27B-mmproj-blackfrost-ABLITERATED-Q8_0", None, True),
+        "Qwen3.8-27B-Swift-1.5-ajgazin-Orca-MTP-RCO-IQ3_XXS": (
+            "Qwen3.8-27B-mmproj-blackfrost-ABLITERATED-Q8_0",
+            None,
+            True,
+        ),
         "Qwen3.8-27B-UD-Q2_K_XL": ("Qwen3.8-27B-mmproj-blackfrost-ABLITERATED-Q8_0", None, True),
         "gemma-4-12B-it-qat-UD-Q4_K_XL": ("gemma-4-12B-it-qat-mmproj-F16", "mtp-gemma-4-12B-it-Q4_0", False),
-        "gemma-4-12B-it-qat-q4_0-unquantized-heretic-Q4_0": ("gemma-4-12B-it-qat-mmproj-F16", "mtp-gemma-4-12B-it-Q4_0", False),
+        "gemma-4-12B-it-qat-q4_0-unquantized-heretic-Q4_0": (
+            "gemma-4-12B-it-qat-mmproj-F16",
+            "mtp-gemma-4-12B-it-Q4_0",
+            False,
+        ),
     }
     assert set(models) == set(expect)
     for name, (mm, dr, mtp) in expect.items():
@@ -108,8 +120,9 @@ def test_split_model_listed_once(tmp_path):
 def test_nested_unreadable_and_junction_loop(tmp_path):
     gb.model(tmp_path / "a" / "b" / "deep.gguf", "x", 10)
     (tmp_path / "junk.gguf").write_bytes(b"nope")
-    subprocess.run(["cmd", "/c", "mklink", "/J", str(tmp_path / "a" / "loop"), str(tmp_path)],
-                   capture_output=True, check=True)
+    subprocess.run(
+        ["cmd", "/c", "mklink", "/J", str(tmp_path / "a" / "loop"), str(tmp_path)], capture_output=True, check=True
+    )
     entries = c.scan([str(tmp_path)])
     kinds = {e.stem: e.kind for e in entries}
     assert kinds == {"deep": c.Kind.MODEL, "junk": c.Kind.UNREADABLE}
