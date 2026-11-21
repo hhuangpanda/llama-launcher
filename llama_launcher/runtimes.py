@@ -7,6 +7,8 @@ import re
 import subprocess
 from dataclasses import dataclass, field
 
+from llama_launcher.server_flags import HELP, VERSION
+
 EXE_NAME = "llama-server.exe"
 _FLAG_RE = re.compile(r"-{1,2}[A-Za-z0-9][\w.-]*")
 
@@ -109,7 +111,7 @@ class Runtime:
 @dataclass
 class RuntimeInfo:
     version: VersionInfo
-    help: HelpTable
+    help_table: HelpTable
 
 
 class RuntimeProbe:
@@ -135,8 +137,8 @@ class RuntimeProbe:
         sig = self._sig(rt)
         if sig not in self._cache:
             self.runs += 1
-            self._cache[sig] = RuntimeInfo(parse_version(self._run(rt, "--version")),
-                                           parse_help(self._run(rt, "--help")))
+            self._cache[sig] = RuntimeInfo(parse_version(self._run(rt, VERSION)),
+                                           parse_help(self._run(rt, HELP)))
         return self._cache[sig]
 
     @staticmethod

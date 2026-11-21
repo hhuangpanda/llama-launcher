@@ -1,8 +1,8 @@
 import logging
 
 import pytest
-
 from conftest import FIXTURES
+
 from llama_launcher import errors, logs
 
 LOGS = FIXTURES / "logs"

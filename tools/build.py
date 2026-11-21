@@ -1,4 +1,4 @@
-"""Builds dist\llama-launcher\llama-launcher.exe (PyInstaller, one folder)."""
+"""Builds dist/llama-launcher/llama-launcher.exe (PyInstaller, one folder)."""
 
 import subprocess
 import sys

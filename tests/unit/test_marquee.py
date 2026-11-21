@@ -28,7 +28,9 @@ def test_holds_start_1s_scrolls_one_char_per_step_holds_end_1s_then_restarts():
 
 
 def test_width_limit_with_uneven_characters():
-    wide = lambda s: sum(3 if c == "W" else 1 for c in s)  # 'W' is three units wide
+    def wide(s):  # 'W' is three units wide
+        return sum(3 if c == "W" else 1 for c in s)
+
     m = Marquee(10, measure=wide, start_hold_ms=0)
     m.set_text("WWWiiiiiiiiii")  # 9 + 10 = 19 units
     assert m.view() == "WWWi"       # 9 + 1 = 10 units: as much as fits

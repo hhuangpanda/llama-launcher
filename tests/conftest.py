@@ -1,14 +1,25 @@
 import os
-import sys
 from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parent))
-
-from llama_launcher.runtimes import HelpTable, parse_help  # noqa: E402
+from llama_launcher.runtimes import HelpTable, parse_help
 
 FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def _load_dotenv(path: Path) -> None:
+    """KEY=value lines from the git-ignored .env; variables already set in the environment win."""
+    if not path.is_file():
+        return
+    for line in path.read_text(encoding="utf-8").splitlines():
+        key, sep, value = line.partition("=")
+        key = key.strip()
+        if sep and key and not key.startswith("#"):
+            os.environ.setdefault(key, value.strip().strip("\"'"))
+
+
+_load_dotenv(Path(__file__).parent.parent / ".env")
 
 
 @pytest.fixture(scope="session")

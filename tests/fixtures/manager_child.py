@@ -4,10 +4,9 @@ import sys
 import time
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "integration"))
+import helpers  # tests/ is on PYTHONPATH (set by the P6 test)
 
-import helpers  # noqa: E402
-from llama_launcher.server import ServerManager, State  # noqa: E402
+from llama_launcher.server import ServerManager, State
 
 tmp = Path(sys.argv[1])
 m = ServerManager(tmp / "logs", tmp / "cwd")

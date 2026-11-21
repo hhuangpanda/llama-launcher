@@ -1,4 +1,3 @@
-import os
 import time
 
 import pytest
@@ -14,7 +13,7 @@ def cfg(tmp_path):
 
 
 def test_defaults_created(cfg):
-    assert cfg.settings.port == 9931 and cfg.settings.glob.idle_mode == "sleep"
+    assert cfg.settings.port == 9931 and cfg.settings.global_.idle_mode == "sleep"
     assert cfg.settings_path.exists() and cfg.profiles_path.exists()
 
 

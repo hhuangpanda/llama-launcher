@@ -43,8 +43,8 @@ def test_new_import(run):
     s = p.settings
     assert [(x.name, x.path) for x in s.runtimes] == [("llama", r"C:\llama"), ("build-cuda", r"C:\src\llama.cpp\build-cuda\bin")]
     assert s.default_runtime == "llama" and s.model_folders == [M]
-    assert s.glob.args == "-t 12 --load-mode none --fit on --flash-attn on" and s.glob.cache_type_k == "q8_0"
-    assert s.glob.cache_type_v == ""  # differs between commands -> stays per profile
+    assert s.global_.args == "-t 12 --load-mode none --fit on --flash-attn on" and s.global_.cache_type_k == "q8_0"
+    assert s.global_.cache_type_v == ""  # differs between commands -> stays per profile
     gemma = next(m for m in p.models if m.file.endswith("gemma-qat.gguf"))
     assert gemma.mmproj.endswith("gemma-mmproj.gguf") and gemma.draft.endswith("mtp-gemma.gguf")
     assert gemma.profiles[0].alias == "" and gemma.profiles[0].ctx_size == 131072
@@ -98,14 +98,14 @@ def test_entry_errors(run, entries, msg):
 def test_string_command_and_bad_json():
     e = ci.load_entries(json.dumps([{"name": "a", "command": r'C:\llama\llama-server.exe -m "C:\my models\a.gguf"'}]))
     assert e[0].argv == [REL, "-m", r"C:\my models\a.gguf"]
-    with pytest.raises(ci.ImportError_, match="needs"):
+    with pytest.raises(ci.CommandImportError, match="needs"):
         ci.load_entries('[{"name": "a"}]')
-    with pytest.raises(ci.ImportError_, match="not valid JSON"):
+    with pytest.raises(ci.CommandImportError, match="not valid JSON"):
         ci.load_entries("{")
 
 
 def test_cli_dry_run_writes_nothing_then_write(tmp_path, monkeypatch, capsys, release_help):
-    monkeypatch.setattr(ci.RuntimeProbe, "info", lambda self, rt: type("I", (), {"help": release_help})())
+    monkeypatch.setattr(ci.RuntimeProbe, "info", lambda self, rt: type("I", (), {"help_table": release_help})())
     f = tmp_path / "in.json"
     f.write_text(json.dumps(ENTRIES))
     home = tmp_path / "home"
@@ -123,7 +123,7 @@ def test_cli_dry_run_writes_nothing_then_write(tmp_path, monkeypatch, capsys, re
 
 
 def test_global_flag_missing_from_command_is_unset(run):
-    p = run(settings=Settings(glob=GlobalOptions(args="--fit on --mlock")))
+    p = run(settings=Settings(global_=GlobalOptions(args="--fit on --mlock")))
     r = by_name(p)["qwen-general"]
     assert r.profile.unset == ["--mlock"] and "--fit" not in r.profile.args and r.exact
 

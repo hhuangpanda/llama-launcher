@@ -7,7 +7,9 @@ Test-case IDs used in test names and comments (A1, P7, U3...) are in `docs/test-
 - Python 3.13, venv in `.venv`. Run everything with `.venv\Scripts\python.exe`, never a bare `python`.
 - Depend on `PySide6-Essentials`, not the `PySide6` meta package (it pulls WebEngine; ~1 GB).
 - Tests: `.venv\Scripts\python.exe -m pytest`. Real-binary tests are opt-in (`-m real`) and read
-  `LLAMA_LAUNCHER_TEST_MODELS` / `LLAMA_LAUNCHER_TEST_RUNTIMES`; never hard-code machine paths.
+  `LLAMA_LAUNCHER_TEST_MODELS` / `LLAMA_LAUNCHER_TEST_RUNTIMES` from the environment or the git-ignored
+  `.env` (see `.env.example`); never hard-code machine paths.
+- Lint: `.venv\Scripts\python.exe -m ruff check .` (config in `pyproject.toml`).
 - Build: `.venv\Scripts\python.exe tools\build.py` -> `dist\llama-launcher\`.
 - Imports are absolute (`from llama_launcher.x import y`).
 
@@ -18,6 +20,7 @@ Test-case IDs used in test names and comments (A1, P7, U3...) are in `docs/test-
 | `gguf.py` | header-only GGUF reader |
 | `catalog.py` | folder scan, file kinds, sidecar suggestions, info cache |
 | `runtimes.py` | runtime folders, `--version` / `--help` parsing into a flag table |
+| `server_flags.py` | every llama-server flag the app sets or reads, and which config field maps to which |
 | `args.py` | tokenizer (backslashes literal) and the later-wins flag merger |
 | `config.py` | settings/profiles TOML via tomlkit, comment-preserving saves |
 | `launch.py` | profile -> argv/env + pre-launch validation (pure) |
@@ -25,6 +28,7 @@ Test-case IDs used in test names and comments (A1, P7, U3...) are in `docs/test-
 | `errors.py` | failure classification from exit code + server.log tail |
 | `cmdimport.py` | profiles from llama-server command lines (dry run by default) |
 | `controller.py` | Qt glue; `ui/` holds tray, settings window, profile editor |
+| `ui/tabs/` | one module per settings tab; `SettingsTab` edits the window's working copies |
 
 ## Rules
 

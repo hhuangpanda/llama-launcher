@@ -2,9 +2,9 @@ import os
 import subprocess
 from pathlib import Path
 
+import gguf_builder as gb
 import pytest
 
-import gguf_builder as gb
 from llama_launcher import catalog as c
 from llama_launcher.gguf import GGUFError, read_info, read_metadata
 

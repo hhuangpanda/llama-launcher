@@ -1,18 +1,17 @@
+import gguf_builder as gb
 import pytest
 
-import gguf_builder as gb
-from llama_launcher import args as A
+from llama_launcher import args, launch
 from llama_launcher import catalog as c
-from llama_launcher import launch as L
-from llama_launcher.config import GlobalOptions, ModelEntry, Profile, RuntimeEntry, Settings
+from llama_launcher.config import GlobalOptions, ModelEntry, Profile, Settings
 from llama_launcher.runtimes import Runtime
 
 
 def build(help, glob_args="", prof=None, model=None, settings=None, **kw):
-    s = settings or Settings(glob=GlobalOptions(args=glob_args, idle_mode="off"))
+    s = settings or Settings(global_=GlobalOptions(args=glob_args, idle_mode="off"))
     m = model or ModelEntry(r"C:\m\model.gguf")
     p = prof or Profile("p")
-    return L.build(s, m, p, Runtime("rt", r"C:\rt", command_prefix=["srv"]), help, **kw)
+    return launch.build(s, m, p, Runtime("rt", r"C:\rt", command_prefix=["srv"]), help, **kw)
 
 
 def flags(spec):
@@ -82,8 +81,8 @@ def test_quoted_json_and_paths(release_help):
 
 
 def test_tokenizer_details():
-    assert A.tokenize(r'a "b \"c\"" d\e') == ["a", 'b "c"', r"d\e"]
-    assert A.tokenize("--temp -1 --x=y") == ["--temp", "-1", "--x=y"]
+    assert args.tokenize(r'a "b \"c\"" d\e') == ["a", 'b "c"', r"d\e"]
+    assert args.tokenize("--temp -1 --x=y") == ["--temp", "-1", "--x=y"]
 
 
 # A8
@@ -101,7 +100,10 @@ def test_unknown_flag(release_help):
 # A10
 def test_per_runtime_flag_table(release_help, local_help):
     p = Profile("p", args="--moe-cache-cpu-share 1")
-    flag_errors = lambda s: [d for d in s.diagnostics if "not a flag" in d.message]
+
+    def flag_errors(s):
+        return [d for d in s.diagnostics if "not a flag" in d.message]
+
     assert flag_errors(build(release_help, prof=p))
     assert not flag_errors(build(local_help, prof=p))
 
@@ -109,7 +111,7 @@ def test_per_runtime_flag_table(release_help, local_help):
 # A11
 @pytest.mark.parametrize("mode,expect", [("sleep", "3600"), ("stop", "3600"), ("off", None)])
 def test_idle_flag(release_help, mode, expect):
-    s = build(release_help, settings=Settings(glob=GlobalOptions(idle_mode=mode)))
+    s = build(release_help, settings=Settings(global_=GlobalOptions(idle_mode=mode)))
     assert value(s, "--sleep-idle-seconds") == expect and s.idle_mode == mode
 
 
@@ -143,13 +145,13 @@ def test_alias_default_and_override(release_help):
 
 
 def test_cache_types_layering(release_help):
-    st = Settings(glob=GlobalOptions(cache_type_k="q8_0", cache_type_v="q8_0", idle_mode="off"))
+    st = Settings(global_=GlobalOptions(cache_type_k="q8_0", cache_type_v="q8_0", idle_mode="off"))
     s = build(release_help, settings=st, prof=Profile("p", cache_type_v="q4_0"))
     assert value(s, "--cache-type-k") == "q8_0" and value(s, "--cache-type-v") == "q4_0"
 
 
 def test_env_api_key_and_strip(release_help):
-    st = Settings(api_key="dummy", glob=GlobalOptions(idle_mode="off"))
+    st = Settings(api_key="dummy", global_=GlobalOptions(idle_mode="off"))
     s = build(release_help, settings=st, base_env={"PATH": "x", "LLAMA_ARG_CTX_SIZE": "1", "LLAMA_API_KEY": "old"})
     assert s.env == {"PATH": "x", "LLAMA_API_KEY": "dummy"} and "dummy" not in s.argv
 
@@ -160,7 +162,7 @@ def test_listen_all_connects_locally(release_help):
 
 
 def test_no_runtime(release_help):
-    s = L.build(Settings(), ModelEntry(r"C:\m\a.gguf"), Profile("p"), None, release_help)
+    s = launch.build(Settings(), ModelEntry(r"C:\m\a.gguf"), Profile("p"), None, release_help)
     assert not s.ok and "no llama.cpp runtime" in s.diagnostics[0].message
 
 
@@ -218,7 +220,7 @@ def test_model_rows_merge_configured_and_scanned(llm):
     entries = c.scan([str(d)])
     configured = [ModelEntry(str(d / "Qwen3.8-27B-UD-Q2_K_XL.gguf"), profiles=[Profile("a"), Profile("b")]),
                   ModelEntry(str(d / "missing.gguf"), profiles=[Profile("x")])]
-    rows = {L.stem(r.model.file): r for r in L.model_rows(configured, entries)}
+    rows = {launch.stem(r.model.file): r for r in launch.model_rows(configured, entries)}
     assert len(rows) == 7
     assert [p.name for p in rows["Qwen3.8-27B-UD-Q2_K_XL"].model.profiles] == ["a", "b"]
     assert rows["missing"].exists is False

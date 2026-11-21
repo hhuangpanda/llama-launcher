@@ -1,16 +1,15 @@
 import os
-import socket
 import subprocess
 import sys
-import threading
 import time
 import urllib.request
 from pathlib import Path
 
 import pytest
-
 from helpers import FIXTURES, PYTHON, free_port, pid_alive, spec, wait_for
+
 from llama_launcher.config import GlobalOptions, Profile, Settings
+from llama_launcher.paths import read_text
 from llama_launcher.server import ServerManager, State, http_json
 
 
@@ -124,7 +123,7 @@ def _health(port):
 
 # P6
 def test_child_dies_with_app(tmp_path):
-    env = dict(os.environ, PYTHONPATH=os.pathsep.join([str(Path(__file__).parents[2]),
+    env = dict(os.environ, PYTHONPATH=os.pathsep.join([str(Path(__file__).parents[2]), str(Path(__file__).parents[1]),
                                                         *[p for p in sys.path if p.endswith("site-packages")]]))
     app = subprocess.Popen([PYTHON, str(FIXTURES / "manager_child.py"), str(tmp_path)], env=env,
                            stdout=subprocess.PIPE, text=True, creationflags=subprocess.CREATE_NO_WINDOW)
@@ -154,11 +153,11 @@ def test_profile_change_marks_stale_and_restart_applies(mgr, tmp_path):
 
 # P8
 def test_settings_change_while_stopped_used_on_next_start(mgr, tmp_path):
-    s1 = Settings(glob=GlobalOptions(idle_mode="off", args="--temp 1.0"))
+    s1 = Settings(global_=GlobalOptions(idle_mode="off", args="--temp 1.0"))
     mgr.start(spec(tmp_path, settings=s1))
     assert running(mgr)
     mgr.stop()
-    s2 = Settings(glob=GlobalOptions(idle_mode="off", args="--temp 0.2"))
+    s2 = Settings(global_=GlobalOptions(idle_mode="off", args="--temp 0.2"))
     mgr.start(spec(tmp_path, settings=s2))
     assert running(mgr)
     assert "--temp 0.2" in (tmp_path / "logs" / "server.log").read_text()
@@ -166,7 +165,7 @@ def test_settings_change_while_stopped_used_on_next_start(mgr, tmp_path):
 
 # P9
 def test_stop_mode_idle(mgr, tmp_path):
-    s = Settings(glob=GlobalOptions(idle_mode="stop", idle_seconds=1))
+    s = Settings(global_=GlobalOptions(idle_mode="stop", idle_seconds=1))
     mgr.start(spec(tmp_path, settings=s))
     assert running(mgr)
     pid = mgr.status.pid
@@ -184,7 +183,7 @@ def _chat(s):
 
 # P10
 def test_stop_mode_activity_keeps_running(mgr, tmp_path):
-    s = spec(tmp_path, settings=Settings(glob=GlobalOptions(idle_mode="stop", idle_seconds=1)))
+    s = spec(tmp_path, settings=Settings(global_=GlobalOptions(idle_mode="stop", idle_seconds=1)))
     mgr.start(s)
     assert running(mgr)
     end = time.monotonic() + 2.5
@@ -196,7 +195,7 @@ def test_stop_mode_activity_keeps_running(mgr, tmp_path):
 
 # P11
 def test_sleep_mode_tracks_sleep_and_wake(mgr, tmp_path):
-    s = spec(tmp_path, settings=Settings(glob=GlobalOptions(idle_mode="sleep", idle_seconds=1)))
+    s = spec(tmp_path, settings=Settings(global_=GlobalOptions(idle_mode="sleep", idle_seconds=1)))
     mgr.start(s)
     assert running(mgr)
     assert wait_for(lambda: mgr.status.state is State.SLEEPING, 10)
@@ -215,7 +214,7 @@ def test_quit_while_starting(mgr, tmp_path):
 
 # P13
 def test_api_key_in_env_only(mgr, tmp_path):
-    s = spec(tmp_path, settings=Settings(api_key="sekrit-dummy", glob=GlobalOptions(idle_mode="sleep", idle_seconds=60)))
+    s = spec(tmp_path, settings=Settings(api_key="sekrit-dummy", global_=GlobalOptions(idle_mode="sleep", idle_seconds=60)))
     mgr.start(s)
     assert running(mgr)
     text = (tmp_path / "logs" / "server.log").read_text()
@@ -225,7 +224,7 @@ def test_api_key_in_env_only(mgr, tmp_path):
 
 # P14
 def test_listen_all(mgr, tmp_path):
-    s = spec(tmp_path, settings=Settings(listen="0.0.0.0", glob=GlobalOptions(idle_mode="off")))
+    s = spec(tmp_path, settings=Settings(listen="0.0.0.0", global_=GlobalOptions(idle_mode="off")))
     mgr.start(s)
     assert running(mgr)
     assert _health(s.port)
@@ -242,7 +241,8 @@ def test_server_log_rotation(mgr, tmp_path):
     assert running(mgr)
     assert (logs / "server.prev.log").read_text() == first
     mgr.start(spec(tmp_path, port=mgr.status.spec.port))
-    assert wait_for(lambda: mgr.status.state is State.RUNNING and "invalid argument" not in (logs / "server.prev.log").read_text())
+    # read_text retries: the poll can land while the server thread is renaming server.log onto server.prev.log
+    assert wait_for(lambda: mgr.status.state is State.RUNNING and "invalid argument" not in read_text(logs / "server.prev.log"))
     assert sorted(p.name for p in logs.iterdir()) == ["server.log", "server.prev.log"]
 
 

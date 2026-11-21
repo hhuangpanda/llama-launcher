@@ -8,7 +8,7 @@ answers `/health`, `/v1/models`, `/slots`, `/props`, prints the real `--help`/`-
 Phase 0, and can be told to delay readiness, exit with a code and message, or go idle/sleep.
 Runtimes accept a command prefix so tests run `[python, fake_server.py]` in place of the exe.
 GGUF fixtures are tiny header-only files written by a test helper. `tests/real` (marker `real`, opt-in) uses real binaries and models from the env vars
-`LLAMA_LAUNCHER_TEST_MODELS` and `LLAMA_LAUNCHER_TEST_RUNTIMES`.
+`LLAMA_LAUNCHER_TEST_MODELS` and `LLAMA_LAUNCHER_TEST_RUNTIMES` (environment or the git-ignored `.env`).
 
 ### GGUF + catalog (unit)
 

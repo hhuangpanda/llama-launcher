@@ -1,13 +1,14 @@
 import uuid
 import winreg
 
+import gguf_builder as gb
 import pytest
+from conftest import FIXTURES
+from helpers import FAKE, free_port
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QApplication, QMenu
 
-import gguf_builder as gb
-from conftest import FIXTURES
 from llama_launcher import startup
 from llama_launcher.__main__ import App
 from llama_launcher.config import Config, GlobalOptions, ModelEntry, Profile, RuntimeEntry
@@ -16,10 +17,6 @@ from llama_launcher.launch import ProfileKey
 from llama_launcher.runtimes import Runtime
 from llama_launcher.server import ServerManager, State
 from llama_launcher.single_instance import notify_existing
-
-import sys
-sys.path.insert(0, str(FIXTURES.parent / "integration"))
-from helpers import FAKE, free_port, wait_for  # noqa: E402
 
 TEST_RUN_KEY = r"Software\llama-launcher-test\Run"
 
@@ -32,7 +29,7 @@ def env(tmp_path, qtbot):
     cfg.settings.port = free_port()
     cfg.settings.model_folders = [str(llm)]
     cfg.settings.runtimes = [RuntimeEntry("fake", str(FIXTURES))]
-    cfg.settings.glob = GlobalOptions(idle_mode="off", args="--flash-attn on")
+    cfg.settings.global_ = GlobalOptions(idle_mode="off", args="--flash-attn on")
     cfg.save_settings()
     swift = str(llm / "Qwen3.8-27B-Swift-1.5-ajgazin-Orca-MTP-RCO-IQ3_XXS.gguf")
     cfg.models = [ModelEntry(swift, profiles=[Profile("swift-orca", ctx_size=102400),
@@ -83,7 +80,7 @@ def test_settings_is_taskbar_window(env):
     w = app.open_settings()
     flags = w.windowFlags()
     assert w.isWindow() and w.parent() is None
-    assert not (flags & Qt.Tool) == Qt.Tool and not (flags & Qt.SplashScreen) == Qt.SplashScreen
+    assert (flags & Qt.Tool) != Qt.Tool and (flags & Qt.SplashScreen) != Qt.SplashScreen
 
 
 # U3
@@ -110,7 +107,10 @@ def test_start_from_tray_updates_menu_live(env, qtbot):
     menu = actions(app.tray.menu)
     sub = menu["Qwen3.8-27B-Swift-1.5-ajgazin-Orca-MTP-RCO-IQ3_XXS"]
     sub["profile:mtp"].trigger()
-    head = lambda: app.tray.header_lines()[0]
+
+    def head():
+        return app.tray.header_lines()[0]
+
     qtbot.waitUntil(lambda: c.manager.status.state is State.RUNNING, timeout=10000)
     qtbot.waitUntil(lambda: head().startswith("Running"))
     assert sub["profile:mtp"].isChecked() and sub["profile:mtp"].text() == "↻ Restart mtp (up to 256k)"
@@ -155,21 +155,21 @@ def test_profile_editor_preview_updates_live(env, qtbot):
     app, c, llm, swift = env
     w = app.open_settings()
     w.tabs.setCurrentIndex(4)
-    top = next(w.tree.topLevelItem(i) for i in range(w.tree.topLevelItemCount())
-               if w.tree.topLevelItem(i).text(0).startswith("Qwen3.8-27B-Swift"))
-    w.tree.setCurrentItem(top.child(1))
-    assert "--spec-type draft-mtp" in w.editor.preview.toPlainText()
-    assert w.editor.ctx.inherit.isChecked()
-    w.editor.ctx.inherit.setChecked(False)
-    w.editor.ctx.spin.setValue(65536)
-    assert "--ctx-size 65536" in w.editor.preview.toPlainText() and w.dirty
+    top = next(w.profiles_tab.tree.topLevelItem(i) for i in range(w.profiles_tab.tree.topLevelItemCount())
+               if w.profiles_tab.tree.topLevelItem(i).text(0).startswith("Qwen3.8-27B-Swift"))
+    w.profiles_tab.tree.setCurrentItem(top.child(1))
+    assert "--spec-type draft-mtp" in w.profiles_tab.editor.preview.toPlainText()
+    assert w.profiles_tab.editor.ctx.inherit.isChecked()
+    w.profiles_tab.editor.ctx.inherit.setChecked(False)
+    w.profiles_tab.editor.ctx.spin.setValue(65536)
+    assert "--ctx-size 65536" in w.profiles_tab.editor.preview.toPlainText() and w.dirty
     assert c.config.models[0].profiles[1].ctx_size == 0  # not saved yet
     # mmproj dropdown lists only the 5120-dim projector; picking another file shows an error
-    items = [w.editor.mmproj.combo.itemData(i) for i in range(w.editor.mmproj.combo.count())]
+    items = [w.profiles_tab.editor.mmproj.combo.itemData(i) for i in range(w.profiles_tab.editor.mmproj.combo.count())]
     assert [p.split("\\")[-1] for p in items if p] == ["Qwen3.8-27B-mmproj-blackfrost-ABLITERATED-Q8_0.gguf"]
-    w.editor.mmproj.combo.addItem("wrong", str(llm / "gemma-4-12B-it-qat-mmproj-F16.gguf"))
-    w.editor.mmproj.combo.setCurrentIndex(w.editor.mmproj.combo.count() - 1)
-    assert "doesn't fit this model" in w.editor.problems.text()
+    w.profiles_tab.editor.mmproj.combo.addItem("wrong", str(llm / "gemma-4-12B-it-qat-mmproj-F16.gguf"))
+    w.profiles_tab.editor.mmproj.combo.setCurrentIndex(w.profiles_tab.editor.mmproj.combo.count() - 1)
+    assert "doesn't fit this model" in w.profiles_tab.editor.problems.text()
     w.save()
     c.config.load()
     assert c.config.models[0].profiles[1].ctx_size == 65536
@@ -178,11 +178,11 @@ def test_profile_editor_preview_updates_live(env, qtbot):
 def test_editing_implicit_model_materializes_it(env):
     app, c, llm, swift = env
     w = app.open_settings()
-    top = next(w.tree.topLevelItem(i) for i in range(w.tree.topLevelItemCount())
-               if w.tree.topLevelItem(i).text(0) == "gemma-4-12B-it-qat-UD-Q4_K_XL")
-    w.tree.setCurrentItem(top.child(0))
-    assert "--spec-draft-model" in w.editor.preview.toPlainText()
-    w.editor.args.setPlainText("--spec-type draft-mtp --spec-draft-n-max 3")
+    top = next(w.profiles_tab.tree.topLevelItem(i) for i in range(w.profiles_tab.tree.topLevelItemCount())
+               if w.profiles_tab.tree.topLevelItem(i).text(0) == "gemma-4-12B-it-qat-UD-Q4_K_XL")
+    w.profiles_tab.tree.setCurrentItem(top.child(0))
+    assert "--spec-draft-model" in w.profiles_tab.editor.preview.toPlainText()
+    w.profiles_tab.editor.args.setPlainText("--spec-type draft-mtp --spec-draft-n-max 3")
     w.save()
     c.config.load()
     gemma = c.config.model(str(llm / "gemma-4-12B-it-qat-UD-Q4_K_XL.gguf"))
@@ -231,12 +231,12 @@ def test_copy_model_id_and_curl(env, qtbot):
 def test_launch_at_startup_toggle(env):
     app, c, *_ = env
     w = app.open_settings()
-    w.startup.setChecked(True)
+    w.general_tab.startup.setChecked(True)
     w.save()
     assert startup.is_enabled(TEST_RUN_KEY)
     with winreg.OpenKey(winreg.HKEY_CURRENT_USER, TEST_RUN_KEY) as k:
         assert "-m llama_launcher" in winreg.QueryValueEx(k, startup.VALUE)[0]
-    w.startup.setChecked(False)
+    w.general_tab.startup.setChecked(False)
     w.save()
     assert not startup.is_enabled(TEST_RUN_KEY)
 
@@ -273,35 +273,35 @@ def test_hand_edit_reloads(env, qtbot):
 def test_inherit_toggle_and_minutes(env):
     app, c, llm, swift = env
     w = app.open_settings()
-    top = next(w.tree.topLevelItem(i) for i in range(w.tree.topLevelItemCount())
-               if w.tree.topLevelItem(i).text(0).startswith("Qwen3.8-27B-Swift"))
-    w.tree.setCurrentItem(top.child(0))
-    assert not w.editor.ctx.inherit.isChecked() and w.editor.ctx.spin.value() == 102400
-    w.editor.ctx.inherit.setChecked(True)  # back to inherit
-    assert w.editor.profile.ctx_size == 0 and "--ctx-size" not in w.editor.preview.toPlainText()
-    w.editor.idle_mode.setCurrentIndex(w.editor.idle_mode.findData("sleep"))
-    w.editor.idle_seconds.inherit.setChecked(False)
-    w.editor.idle_seconds.spin.setValue(5)
-    assert w.editor.profile.idle_seconds == 300 and "--sleep-idle-seconds 300" in w.editor.preview.toPlainText()
-    w.g_idle_s.setValue(90)
-    assert w.settings.glob.idle_seconds == 5400 and w.g_idle_s.suffix() == " min"
+    top = next(w.profiles_tab.tree.topLevelItem(i) for i in range(w.profiles_tab.tree.topLevelItemCount())
+               if w.profiles_tab.tree.topLevelItem(i).text(0).startswith("Qwen3.8-27B-Swift"))
+    w.profiles_tab.tree.setCurrentItem(top.child(0))
+    assert not w.profiles_tab.editor.ctx.inherit.isChecked() and w.profiles_tab.editor.ctx.spin.value() == 102400
+    w.profiles_tab.editor.ctx.inherit.setChecked(True)  # back to inherit
+    assert w.profiles_tab.editor.profile.ctx_size == 0 and "--ctx-size" not in w.profiles_tab.editor.preview.toPlainText()
+    w.profiles_tab.editor.idle_mode.setCurrentIndex(w.profiles_tab.editor.idle_mode.findData("sleep"))
+    w.profiles_tab.editor.idle_seconds.inherit.setChecked(False)
+    w.profiles_tab.editor.idle_seconds.spin.setValue(5)
+    assert w.profiles_tab.editor.profile.idle_seconds == 300 and "--sleep-idle-seconds 300" in w.profiles_tab.editor.preview.toPlainText()
+    w.global_tab.idle_s.setValue(90)
+    assert w.settings.global_.idle_seconds == 5400 and w.global_tab.idle_s.suffix() == " min"
 
 
 def test_rescan_reports_counts(env):
     app, c, llm, swift = env
     w = app.open_settings()
     gb.model(llm / "new-model.gguf", "qwen35", 5120)
-    w._rescan()
-    assert "7 models, 3 mmproj, 1 draft" in w.scan_status.text()
+    w.folders_tab.rescan()
+    assert "7 models, 3 mmproj, 1 draft" in w.folders_tab.scan_status.text()
     assert any(e.path.endswith("new-model.gguf") for e in c.entries)
 
 
 def test_listen_hint(env):
     app, c, *_ = env
     w = app.open_settings()
-    assert w.listen_hint.text().startswith("This PC only")
-    w.listen.setCurrentText("0.0.0.0")
-    assert w.listen_hint.text().startswith("All networks") and w.settings.listen == "0.0.0.0"
+    assert w.general_tab.listen_hint.text().startswith("This PC only")
+    w.general_tab.listen.setCurrentText("0.0.0.0")
+    assert w.general_tab.listen_hint.text().startswith("All networks") and w.settings.listen == "0.0.0.0"
 
 
 def test_info_button_is_a_tooltip(env, qtbot):
@@ -342,7 +342,10 @@ def test_long_header_uses_full_width_and_scrolls_at_constant_size(env, qtbot):
     qtbot.waitExposed(menu)
     label = app.tray.header.labels[0]
     fm = label.fontMetrics()
-    head = lambda: app.tray.header_lines()[0]
+
+    def head():
+        return app.tray.header_lines()[0]
+
     width = label.contentsRect().width()
     assert width > 200  # the header takes the menu's width, not just its minimum
     assert fm.horizontalAdvance(full) > width, "test text must be wider than the header"

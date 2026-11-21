@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import ipaddress
 
-from PySide6.QtCore import QPoint, QRect, Signal
+from PySide6.QtCore import QPoint, QRect, QUrl, Signal
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtNetwork import QAbstractSocket, QNetworkInterface
-from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QLabel, QSpinBox, QToolButton, QToolTip, QWidget
+from PySide6.QtWidgets import QCheckBox, QComboBox, QHBoxLayout, QLabel, QSpinBox, QToolButton, QToolTip, QWidget
 
 IDLE_HELP = (
     "<b>sleep</b>: after the idle time, llama-server unloads the model and frees the VRAM but keeps running. "
@@ -15,6 +16,25 @@ IDLE_HELP = (
     "<b>off</b>: the model stays loaded until you stop it."
 )
 _CGNAT = ipaddress.ip_network("100.64.0.0/10")
+
+
+def open_path(path) -> None:
+    QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+
+
+def choice_combo(choices, blank: str | None = None) -> QComboBox:
+    """Each item's data is its text; `blank` adds a first item whose data is ""."""
+    combo = QComboBox()
+    if blank is not None:
+        combo.addItem(blank, "")
+    for v in choices:
+        combo.addItem(v, v)
+    return combo
+
+
+def select_data(combo: QComboBox, value) -> None:
+    """Select the item holding value, else the first item."""
+    combo.setCurrentIndex(max(0, combo.findData(value)))
 
 
 def tailscale_ipv4() -> list[str]:

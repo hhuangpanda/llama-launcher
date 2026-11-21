@@ -7,19 +7,15 @@ Skipped when either is unset. Models are picked from the folder: the smallest on
 
 import json
 import os
-import sys
 import urllib.request
-from pathlib import Path
 
 import pytest
+from helpers import free_port, pid_alive, wait_for
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "integration"))
-from helpers import free_port, pid_alive, wait_for  # noqa: E402
-
-from llama_launcher import catalog, launch  # noqa: E402
-from llama_launcher.config import GlobalOptions, ModelEntry, Profile, Settings  # noqa: E402
-from llama_launcher.runtimes import Runtime, RuntimeProbe  # noqa: E402
-from llama_launcher.server import ServerManager, State  # noqa: E402
+from llama_launcher import catalog, launch
+from llama_launcher.config import GlobalOptions, ModelEntry, Profile, Settings
+from llama_launcher.runtimes import Runtime, RuntimeProbe
+from llama_launcher.server import ServerManager, State
 
 pytestmark = pytest.mark.real
 
@@ -44,14 +40,14 @@ def smallest(entries, pred=lambda e: True):
 
 
 def settings(idle="off", seconds=3600):
-    return Settings(port=free_port(), glob=GlobalOptions(idle_mode=idle, idle_seconds=seconds,
+    return Settings(port=free_port(), global_=GlobalOptions(idle_mode=idle, idle_seconds=seconds,
                                                          args="--flash-attn on --fit on --parallel 1"))
 
 
 def spec_for(s, model, profile):
     rt = Runtime("test", RUNTIMES[0])
     info = probe.info(rt)
-    return launch.build(s, model, profile, rt, info.help, info.version, get_info=catalog.InfoCache().get)
+    return launch.build(s, model, profile, rt, info.help_table, info.version, get_info=catalog.InfoCache().get)
 
 
 def chat(spec):
@@ -80,7 +76,7 @@ def test_real_runtimes():
         pytest.skip("set LLAMA_LAUNCHER_TEST_RUNTIMES")
     for path in RUNTIMES:
         info = probe.info(Runtime("test", path))
-        assert info.version.build and all(info.help.knows(f) for f in ("--ctx-size", "--spec-type", "--sleep-idle-seconds"))
+        assert info.version.build and all(info.help_table.knows(f) for f in ("--ctx-size", "--spec-type", "--sleep-idle-seconds"))
 
 
 # X1: smallest model with its suggested sidecars loads, answers and stops

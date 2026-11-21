@@ -4,22 +4,22 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import socket
 import subprocess
 import threading
 import time
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Callable
 
 from llama_launcher import errors
 from llama_launcher.args import format_argv
-from llama_launcher.launch import LaunchSpec, connect_host, listen_hosts
+from llama_launcher.config import IdleMode
+from llama_launcher.launch import LaunchSpec, Level, connect_host, listen_hosts
 from llama_launcher.logs import rotate
 from llama_launcher.winjob import job
 
@@ -144,7 +144,7 @@ class ServerManager:
             self._gen += 1
             gen = self._gen
         if not spec.ok:
-            errs = "\n".join(d.message for d in spec.diagnostics if d.level == "error")
+            errs = "\n".join(d.message for d in spec.diagnostics if d.level == Level.ERROR)
             self._stop_proc("replaced")
             self._set(state=State.FAILED, spec=spec, message=errs, pid=None)
             return
@@ -231,7 +231,7 @@ class ServerManager:
                     self._finish_failed(gen, proc)
                 return
             now = time.monotonic()
-            if now >= next_props and (spec.idle_mode != "off" or self.status.n_ctx is None):
+            if now >= next_props and (spec.idle_mode != IdleMode.OFF or self.status.n_ctx is None):
                 next_props = now + self.idle_poll
                 try:
                     props = http_json(f"{spec.base_url}/props", key)[1]
@@ -241,8 +241,8 @@ class ServerManager:
                     sleeping, n_ctx = None, None
                 if isinstance(n_ctx, int) and n_ctx > 0 and not sleeping and n_ctx != self.status.n_ctx:
                     self._set(gen, n_ctx=n_ctx)
-                if sleeping is not None and spec.idle_mode != "off":
-                    if sleeping and spec.idle_mode == "stop":
+                if sleeping is not None and spec.idle_mode != IdleMode.OFF:
+                    if sleeping and spec.idle_mode == IdleMode.STOP:
                         self._stop_proc("idle")
                         self._set(gen, state=State.STOPPED, pid=None,
                                   message=f"stopped after {spec.idle_seconds}s idle")

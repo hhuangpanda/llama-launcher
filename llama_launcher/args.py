@@ -6,8 +6,8 @@ import re
 from dataclasses import dataclass
 
 from llama_launcher.runtimes import HelpTable
+from llama_launcher.server_flags import RESERVED
 
-RESERVED = ("--host", "--port", "--api-key", "--api-key-file", "--model")
 _NUMBER = re.compile(r"^-\d|^-\.\d")
 
 
@@ -64,7 +64,7 @@ def _is_flag(tok: str) -> bool:
     return tok.startswith("-") and len(tok) > 1 and not _NUMBER.match(tok)
 
 
-def parse(tokens: list[str], help: HelpTable, layer: str = "") -> list[Flag]:
+def parse(tokens: list[str], help_table: HelpTable, layer: str = "") -> list[Flag]:
     out: list[Flag] = []
     i = 0
     while i < len(tokens):
@@ -76,7 +76,7 @@ def parse(tokens: list[str], help: HelpTable, layer: str = "") -> list[Flag]:
             out.append(Flag(name, val, layer))
             i += 1
             continue
-        needs = help.needs_value(tok)
+        needs = help_table.needs_value(tok)
         nxt = tokens[i + 1] if i + 1 < len(tokens) else None
         if needs is True or (needs is None and nxt is not None and not _is_flag(nxt)):
             if nxt is None:
@@ -89,35 +89,35 @@ def parse(tokens: list[str], help: HelpTable, layer: str = "") -> list[Flag]:
     return out
 
 
-def parse_text(text: str, help: HelpTable, layer: str) -> list[Flag]:
+def parse_text(text: str, help_table: HelpTable, layer: str) -> list[Flag]:
     try:
-        return parse(tokenize(text), help, layer)
+        return parse(tokenize(text), help_table, layer)
     except ArgError as e:
         msg = str(e)
         raise ArgError(msg if msg.startswith(layer) else f"{layer}: {msg}") from None
 
 
-def reserved_in(flags: list[Flag], help: HelpTable) -> list[str]:
-    res = {help.canonical(r) for r in RESERVED}
-    return [f.flag for f in flags if help.canonical(f.flag) in res]
+def reserved_in(flags: list[Flag], help_table: HelpTable) -> list[str]:
+    res = {help_table.canonical(r) for r in RESERVED}
+    return [f.flag for f in flags if help_table.canonical(f.flag) in res]
 
 
 class Merger:
     """Ordered flag set; a later flag replaces any earlier spelling of the same canonical flag."""
 
-    def __init__(self, help: HelpTable):
-        self.help = help
+    def __init__(self, help_table: HelpTable):
+        self.help_table = help_table
         self._items: dict[str, Flag] = {}
 
     def add(self, flags: list[Flag]) -> None:
         for f in flags:
-            self._items[self.help.canonical(f.flag)] = f
+            self._items[self.help_table.canonical(f.flag)] = f
 
     def remove(self, flag: str) -> bool:
-        return self._items.pop(self.help.canonical(flag), None) is not None
+        return self._items.pop(self.help_table.canonical(flag), None) is not None
 
     def get(self, flag: str) -> Flag | None:
-        return self._items.get(self.help.canonical(flag))
+        return self._items.get(self.help_table.canonical(flag))
 
     def flags(self) -> list[Flag]:
         return list(self._items.values())

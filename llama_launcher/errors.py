@@ -21,7 +21,7 @@ def strip(line: str) -> str:
 
 
 def _error_lines(lines: list[str]) -> list[str]:
-    return [strip(l) for l in lines if re.match(r"^\d+\.\d+\.\d+\.\d+ E ", l) or l.startswith("error")]
+    return [strip(line) for line in lines if re.match(r"^\d+\.\d+\.\d+\.\d+ E ", line) or line.startswith("error")]
 
 
 _RULES = [
@@ -54,7 +54,7 @@ def classify(exit_code: int | None, lines: list[str]) -> Failure:
     if code in CRASH_CODES:
         msg = f"llama-server crashed ({CRASH_CODES[code]}, 0x{code:08X})"
         return Failure("crash", msg + (f": {last}" if last else ""))
-    tail = errs[-5:] if errs else [strip(l) for l in lines if l.strip()][-5:]
+    tail = errs[-5:] if errs else [strip(line) for line in lines if line.strip()][-5:]
     hexcode = f" (0x{code:08X})" if code > 255 else ""
     return Failure("other", f"llama-server exited with code {exit_code}{hexcode}" + ("\n" + "\n".join(tail) if tail else ""))
 

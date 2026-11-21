@@ -2,23 +2,44 @@
 
 from __future__ import annotations
 
-import os
 import re
-from dataclasses import MISSING, dataclass, field, fields
+from dataclasses import MISSING, Field, dataclass, field, fields
+from enum import StrEnum
 from pathlib import Path
 
 import tomlkit
 from tomlkit.items import AoT
 
-from llama_launcher.catalog import norm
+from llama_launcher.paths import norm, read_text, replace_file
 
 DEFAULT_PROFILE = "default_profile"
-IDLE_MODES = ("sleep", "stop", "off")
+
+
+class IdleMode(StrEnum):
+    SLEEP = "sleep"
+    STOP = "stop"
+    OFF = "off"
+
+
+IDLE_MODES = tuple(m.value for m in IdleMode)
 CACHE_TYPES = ("f32", "f16", "bf16", "q8_0", "q4_0", "q4_1", "iq4_nl", "q5_0", "q5_1")
 
 
 class ConfigError(ValueError):
     pass
+
+
+def section(toml_key: str, factory):
+    """A field stored as a nested TOML table or array of tables, parsed and saved by its owner."""
+    return field(default_factory=factory, metadata={"toml": toml_key})
+
+
+def _scalars(cls) -> dict[str, Field]:
+    return {f.name: f for f in fields(cls) if "toml" not in f.metadata}
+
+
+def _sections(cls) -> set[str]:
+    return {f.metadata["toml"] for f in fields(cls) if "toml" in f.metadata}
 
 
 @dataclass
@@ -31,7 +52,7 @@ class RuntimeEntry:
 class GlobalOptions:
     cache_type_k: str = ""
     cache_type_v: str = ""
-    idle_mode: str = "sleep"
+    idle_mode: str = IdleMode.SLEEP.value
     idle_seconds: int = 3600
     args: str = ""
 
@@ -44,8 +65,8 @@ class Settings:
     launch_at_startup: bool = False
     default_runtime: str = ""
     model_folders: list[str] = field(default_factory=list)
-    glob: GlobalOptions = field(default_factory=GlobalOptions)
-    runtimes: list[RuntimeEntry] = field(default_factory=list)
+    global_: GlobalOptions = section("global", GlobalOptions)
+    runtimes: list[RuntimeEntry] = section("runtimes", list)
 
     def runtime(self, name: str) -> RuntimeEntry | None:
         return next((r for r in self.runtimes if r.name == name), None)
@@ -70,13 +91,12 @@ class ModelEntry:
     file: str
     mmproj: str = ""
     draft: str = ""
-    profiles: list[Profile] = field(default_factory=list)
+    profiles: list[Profile] = section("profiles", list)
 
     def profile(self, name: str) -> Profile | None:
         return next((p for p in self.profiles if p.name == name), None)
 
 
-_SETTINGS_SCALARS = ("port", "listen", "api_key", "launch_at_startup", "default_runtime", "model_folders")
 _DEFAULT_SETTINGS_TEXT = """\
 # llama-launcher settings. Edited by the app; hand edits are picked up automatically.
 port = 9931
@@ -101,11 +121,12 @@ def _default(f):
     return f.default_factory() if f.default_factory is not MISSING else f.default
 
 
-def _fill(cls, table, where: str, skip=()):
+def _fill(cls, table, where: str):
+    """Typed scalar fields of cls from a TOML table; its sections are left to the caller."""
     kwargs = {}
-    known = {f.name: f for f in fields(cls) if f.name not in ("profiles", "glob", "runtimes")}
+    known, nested = _scalars(cls), _sections(cls)
     for key, value in table.items():
-        if key in skip:
+        if key in nested:
             continue
         if key not in known:
             raise ConfigError(f"{where}: unknown key '{key}'")
@@ -129,15 +150,13 @@ def _validate_options(where: str, idle_mode: str, idle_seconds: int, ck: str, cv
 
 def parse_settings(doc, where="settings.toml") -> Settings:
     data = doc.unwrap() if hasattr(doc, "unwrap") else dict(doc)
-    glob = data.pop("global", {})
-    runtimes = data.pop("runtimes", [])
     s = _fill(Settings, data, where)
-    s.glob = _fill(GlobalOptions, glob, f"{where} [global]")
-    _validate_options(f"{where} [global]", s.glob.idle_mode, s.glob.idle_seconds,
-                      s.glob.cache_type_k, s.glob.cache_type_v, allow_empty=False)
+    s.global_ = _fill(GlobalOptions, data.get("global", {}), f"{where} [global]")
+    _validate_options(f"{where} [global]", s.global_.idle_mode, s.global_.idle_seconds,
+                      s.global_.cache_type_k, s.global_.cache_type_v, allow_empty=False)
     if not 1 <= s.port <= 65535:
         raise ConfigError(f"{where}: port must be 1-65535")
-    for i, r in enumerate(runtimes):
+    for i, r in enumerate(data.get("runtimes", [])):
         if not isinstance(r, dict) or not r.get("name") or not r.get("path"):
             raise ConfigError(f"{where}: runtimes[{i}] needs 'name' and 'path'")
         s.runtimes.append(RuntimeEntry(str(r["name"]), str(r["path"])))
@@ -158,7 +177,7 @@ def parse_profiles(doc, where="profiles.toml") -> list[ModelEntry]:
         w = f"{where} models[{i}]"
         if not m.get("file"):
             raise ConfigError(f"{w}: 'file' is required")
-        entry = _fill(ModelEntry, m, w, skip=("profiles",))
+        entry = _fill(ModelEntry, m, w)
         if norm(entry.file) in seen:
             raise ConfigError(f"{w}: {entry.file} is listed twice")
         seen.add(norm(entry.file))
@@ -188,9 +207,7 @@ def _toml_value(value):
 
 def _sync(table, obj, keep_defaults=()):
     """Write non-default dataclass fields into a tomlkit table; drop keys that went back to default."""
-    for f in fields(obj):
-        if f.name in ("profiles", "glob", "runtimes"):
-            continue
+    for f in _scalars(type(obj)).values():
         value = getattr(obj, f.name)
         if value == _default(f) and f.name not in keep_defaults:
             if f.name in table:
@@ -225,11 +242,11 @@ class Config:
             self.profiles_path.parent.mkdir(parents=True, exist_ok=True)
             self.profiles_path.write_text(_DEFAULT_PROFILES_TEXT, encoding="utf-8")
         try:
-            sdoc = tomlkit.parse(self.settings_path.read_text(encoding="utf-8"))
+            sdoc = tomlkit.parse(read_text(self.settings_path))
         except Exception as e:
             raise ConfigError(f"{self.settings_path.name}: {e}") from e
         try:
-            pdoc = tomlkit.parse(self.profiles_path.read_text(encoding="utf-8"))
+            pdoc = tomlkit.parse(read_text(self.profiles_path))
         except Exception as e:
             raise ConfigError(f"{self.profiles_path.name}: {e}") from e
         settings = parse_settings(sdoc, self.settings_path.name)
@@ -243,10 +260,10 @@ class Config:
     # ---- saving ----
     def save_settings(self) -> None:
         s, doc = self.settings, self._sdoc
-        _sync(doc, s, keep_defaults=_SETTINGS_SCALARS)
+        _sync(doc, s, keep_defaults=tuple(_scalars(Settings)))
         if "global" not in doc:
             doc["global"] = tomlkit.table()
-        _sync(doc["global"], s.glob, keep_defaults=("idle_mode", "idle_seconds", "args"))
+        _sync(doc["global"], s.global_, keep_defaults=("idle_mode", "idle_seconds", "args"))
         existing = {t["name"]: t for t in doc.get("runtimes", [])}
         aot = AoT([])
         for r in s.runtimes:
@@ -264,11 +281,11 @@ class Config:
         current = doc.get("models") or []
         same_shape = len(current) == len(self.models) and all(
             norm(t["file"]) == norm(m.file) and [p["name"] for p in t.get("profiles", [])] == [p.name for p in m.profiles]
-            for t, m in zip(current, self.models))
+            for t, m in zip(current, self.models, strict=True))
         if same_shape:
-            for t, m in zip(current, self.models):
+            for t, m in zip(current, self.models, strict=True):
                 _sync(t, m, keep_defaults=("file",))
-                for pt, p in zip(t.get("profiles", []), m.profiles):
+                for pt, p in zip(t.get("profiles", []), m.profiles, strict=True):
                     _sync(pt, p, keep_defaults=("name",))
             self._write(self.profiles_path, doc)
             return
@@ -299,7 +316,7 @@ class Config:
     def _write(self, path: Path, doc) -> None:
         tmp = path.with_suffix(path.suffix + ".tmp")
         tmp.write_text(re.sub(r"\n{3,}", "\n\n", tomlkit.dumps(doc)), encoding="utf-8")
-        os.replace(tmp, path)
+        replace_file(tmp, path)
         self._mtimes = (self._mtime(self.settings_path), self._mtime(self.profiles_path))
 
     # ---- lookups ----

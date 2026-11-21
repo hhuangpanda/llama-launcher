@@ -67,5 +67,6 @@ llama-server command line (exe first), as a list or one string; `-` reads it fro
 ```
 
 `pytest -m real` loads real models; set `LLAMA_LAUNCHER_TEST_MODELS` (a model folder) and
-`LLAMA_LAUNCHER_TEST_RUNTIMES` (llama-server folders, `;`-separated) first. Test IDs are listed in
+`LLAMA_LAUNCHER_TEST_RUNTIMES` (llama-server folders, `;`-separated) first, in the environment or in a
+git-ignored `.env` (copy `.env.example`). Test IDs are listed in
 [docs/test-cases.md](docs/test-cases.md).

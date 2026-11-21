@@ -5,11 +5,11 @@ import sys
 import time
 from pathlib import Path
 
-from llama_launcher import launch as L
+from llama_launcher import launch
 from llama_launcher.config import GlobalOptions, ModelEntry, Profile, Settings
 from llama_launcher.runtimes import Runtime, RuntimeProbe
 
-FIXTURES = Path(__file__).parent.parent / "fixtures"
+FIXTURES = Path(__file__).parent / "fixtures"
 PYTHON = getattr(sys, "_base_executable", sys.executable)  # not the venv redirector: one process per spawn
 FAKE = [PYTHON, "-I", str(FIXTURES / "fake_server.py")]
 _probe = RuntimeProbe()
@@ -30,10 +30,10 @@ def spec(tmp_path, port=None, profile=None, settings=None, env=None, model_name=
     model.write_bytes(b"GGUF")
     rt = fake_runtime()
     info = _probe.info(rt)
-    s = settings or Settings(glob=GlobalOptions(idle_mode="off"))
+    s = settings or Settings(global_=GlobalOptions(idle_mode="off"))
     s.port = port or free_port()
     base_env = {"SYSTEMROOT": os.environ["SYSTEMROOT"], **(env or {})}
-    return L.build(s, ModelEntry(str(model)), profile or Profile("p"), rt, info.help, info.version,
+    return launch.build(s, ModelEntry(str(model)), profile or Profile("p"), rt, info.help_table, info.version,
                    base_env=base_env, **kw)
 
 

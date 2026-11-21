@@ -2,26 +2,25 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from PySide6.QtCore import QObject, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QAction, QActionGroup, QCursor, QDesktopServices, QGuiApplication
-from PySide6.QtWidgets import (QLabel, QMenu, QSizePolicy, QSystemTrayIcon, QVBoxLayout, QWidget,
-                               QWidgetAction)
+from PySide6.QtWidgets import QLabel, QMenu, QSizePolicy, QSystemTrayIcon, QVBoxLayout, QWidget, QWidgetAction
 
-from llama_launcher import catalog, paths
-from llama_launcher.controller import CONTEXT_CHOICES, Controller, status_lines
-from llama_launcher.launch import ProfileKey, ctx_label, stem
+from llama_launcher import paths
+from llama_launcher.config import Profile
+from llama_launcher.controller import CONTEXT_CHOICES, Controller, CtxSource, status_lines
+from llama_launcher.launch import ModelRow, ProfileKey, ctx_label, stem
 from llama_launcher.logs import prev_path
 from llama_launcher.server import State, Status
 from llama_launcher.ui.icons import state_icon
 from llama_launcher.ui.marquee import Marquee
+from llama_launcher.ui.widgets import open_path
 
 RUNNING_MARK = "  ●"
 HEADER_PX = 500  # minimum text width of the header; the menu is at least this wide
 HEADER_MARGIN = 11  # left/right padding of the header text, close to the menu items' text inset
-
-
-def open_path(path) -> None:
-    QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
 
 
 class StickyMenu(QMenu):
@@ -91,8 +90,85 @@ class Header(QWidget):
         self.resized.emit()
 
 
+class ModelMenu:
+    """One model's submenu: Start/Restart per profile, the context picker and save-as-default."""
+
+    def __init__(self, parent: QMenu, controller: Controller, row: ModelRow, changed: Callable[[], None]):
+        self.c = controller
+        self.row = row
+        self.key = paths.norm(row.model.file)
+        self.name = stem(row.model.file)
+        self._changed = changed
+        self.menu = StickyMenu(self.name, parent)
+        self.menu.setObjectName(f"model:{self.name}")
+
+        self._starts: dict[str, QAction] = {}
+        for p in row.model.profiles:
+            a = _sticky(self.menu.addAction(f"▶ Start {p.name}"))
+            a.setObjectName(f"profile:{p.name}")
+            a.setCheckable(True)
+            a.triggered.connect(lambda checked=False, name=p.name: self._start(name))
+            self._starts[p.name] = a
+        self.menu.addSeparator()
+        self.menu.addAction("Context for the next start").setEnabled(False)
+        group = QActionGroup(self.menu)
+        self._ctx: dict[int | None, QAction] = {}
+        for value in (None, *CONTEXT_CHOICES):
+            a = _sticky(self.menu.addAction(self._default_ctx_text() if value is None else ctx_label(value)))
+            a.setCheckable(True)
+            group.addAction(a)
+            a.triggered.connect(lambda checked=False, v=value: self._pick_ctx(v))
+            self._ctx[value] = a
+        self.menu.addSeparator()
+        self._save = _sticky(self.menu.addAction("", self._save_ctx))
+
+    def refresh(self, running: ProfileKey | None, suffix: str) -> None:
+        model = self.row.model
+        for name, a in self._starts.items():
+            on = running == ProfileKey(self.key, name)
+            a.setChecked(on)
+            ctx = f" ({self._ctx_text(model.profile(name))})"
+            a.setText(f"↻ Restart {name}{ctx}{suffix}" if on else f"▶ Start {name}{ctx}")
+        self.menu.setTitle(self.name + (RUNNING_MARK if running and running.file == self.key else ""))
+        picked = self.c.next_ctx(self.key)
+        for value, a in self._ctx.items():
+            a.setChecked(value == picked)
+            if value is None:
+                a.setText(self._default_ctx_text())
+        target = self.c.ctx_save_target(model)
+        self._save.setText(f"Save picked context as default for '{target.name}'" if target
+                           else "Save picked context as default (start a profile first)")
+        self._save.setEnabled(bool(picked) and target is not None)
+
+    def _ctx_text(self, profile: Profile, use_picked: bool = True) -> str:
+        n, source = self.c.start_ctx(self.row.model, profile, use_picked)
+        if source is CtxSource.MODEL:
+            return f"up to {ctx_label(n)}"
+        return ctx_label(n) if n else "model default"
+
+    def _default_ctx_text(self) -> str:
+        profiles = self.row.model.profiles
+        if len(profiles) != 1:
+            return "Profile default"
+        return f"Profile default ({self._ctx_text(profiles[0], use_picked=False)})"
+
+    def _start(self, profile_name: str) -> None:
+        self.c.start(ProfileKey(self.key, profile_name))
+        self._changed()
+
+    def _pick_ctx(self, value: int | None) -> None:
+        self.c.set_next_ctx(self.row.model.file, value)
+        self._changed()
+
+    def _save_ctx(self) -> None:
+        if self.c.save_ctx_default(self.row.model.file):
+            # the save replaced the config's model objects (and made an implicit model real)
+            self.row = next((r for r in self.c.rows() if paths.norm(r.model.file) == self.key), self.row)
+        self._changed()
+
+
 class Tray(QObject):
-    def __init__(self, controller: Controller, open_settings, quit_app):
+    def __init__(self, controller: Controller, open_settings: Callable[[], object], quit_app: Callable[[], None]):
         super().__init__()
         self.c = controller
         self.open_settings = open_settings
@@ -103,6 +179,7 @@ class Tray(QObject):
         measure = self.menu.fontMetrics().horizontalAdvance
         self.header_px = HEADER_PX
         self._marquees = (Marquee(HEADER_PX, measure), Marquee(HEADER_PX, measure))
+        self._model_menus: list[ModelMenu] = []
         self._scroll = QTimer(self, interval=self._marquees[0].step_ms)
         self._scroll.timeout.connect(self._scroll_tick)
         self.menu.aboutToShow.connect(self._scroll.start)
@@ -149,12 +226,6 @@ class Tray(QObject):
     def rebuild(self) -> None:
         m = self.menu
         m.clear()
-        self._profiles: dict[ProfileKey, tuple[QAction, str]] = {}
-        self._models: dict[str, tuple[QMenu, str]] = {}
-        self._ctx: dict[str, dict[int | None, QAction]] = {}
-        self._save: dict[str, QAction] = {}
-        self._rows = {catalog.norm(r.model.file): r for r in self.c.rows()}
-
         self.header = Header(self.header_px)
         self.header.resized.connect(self._fit_header)
         head = QWidgetAction(m)
@@ -163,18 +234,17 @@ class Tray(QObject):
         for mq in self._marquees:
             mq.measure = self.header.labels[0].fontMetrics().horizontalAdvance
         m.addSeparator()
-        if not self._rows:
+        rows = self.c.rows()
+        if not rows:
             m.addAction("No models: add a model folder in Settings").setEnabled(False)
-        for key, row in self._rows.items():
-            name = stem(row.model.file)
+        self._model_menus = []
+        for row in rows:
             if not row.exists:
-                m.addAction(f"{name} (file missing)").setEnabled(False)
+                m.addAction(f"{stem(row.model.file)} (file missing)").setEnabled(False)
                 continue
-            sub = StickyMenu(name, m)
-            sub.setObjectName(f"model:{name}")
-            m.addMenu(sub)
-            self._models[key] = (sub, name)
-            self._model_menu(sub, key, row.model)
+            mm = ModelMenu(m, self.c, row, self.refresh)
+            m.addMenu(mm.menu)
+            self._model_menus.append(mm)
         m.addSeparator()
         self._stop = _sticky(m.addAction("Stop", self.c.stop))
         self._restart = _sticky(m.addAction("Restart to apply changes", self.c.restart))
@@ -192,45 +262,12 @@ class Tray(QObject):
         m.addAction("Quit", self.quit_app)
         self.refresh()
 
-    def _model_menu(self, sub: QMenu, key: str, model) -> None:
-        for p in model.profiles:
-            pk = ProfileKey.of(model, p)
-            a = _sticky(sub.addAction(f"▶ Start {p.name}"))
-            a.setObjectName(f"profile:{p.name}")
-            a.setCheckable(True)
-            a.triggered.connect(lambda checked=False, k=pk: self._start(k))
-            self._profiles[pk] = (a, p.name)
-        sub.addSeparator()
-        sub.addAction("Context for the next start").setEnabled(False)
-        group = QActionGroup(sub)
-        self._ctx[key] = {}
-        for value in (None, *CONTEXT_CHOICES):
-            text = self._default_ctx_text(model) if value is None else ctx_label(value)
-            a = _sticky(sub.addAction(text))
-            a.setCheckable(True)
-            group.addAction(a)
-            a.triggered.connect(lambda checked=False, v=value, f=model.file: self._pick_ctx(f, v))
-            self._ctx[key][value] = a
-        sub.addSeparator()
-        self._save[key] = _sticky(sub.addAction("", lambda f=model.file: self._save_ctx(f)))
-
-    def _ctx_text(self, model, profile, use_picked=True) -> str:
-        n, source = self.c.start_ctx(model, profile, use_picked)
-        if source == "model":
-            return f"up to {ctx_label(n)}"
-        return ctx_label(n) if n else "model default"
-
-    def _default_ctx_text(self, model) -> str:
-        if len(model.profiles) != 1:
-            return "Profile default"
-        return f"Profile default ({self._ctx_text(model, model.profiles[0], use_picked=False)})"
-
     # ---- live state ----
     def header_lines(self) -> tuple[str, str]:
         return self.header.labels[0].text(), self.header.labels[1].text()
 
     def _show_header(self) -> None:
-        for label, mq in zip(self.header.labels, self._marquees):
+        for label, mq in zip(self.header.labels, self._marquees, strict=True):
             label.setText(mq.view())
 
     def _fit_header(self) -> None:
@@ -253,8 +290,6 @@ class Tray(QObject):
             self._show_header()
 
     def refresh(self) -> None:
-        if not hasattr(self, "header"):
-            return
         st = self.c.manager.status
         first, second = status_lines(st)
         self._marquees[0].set_text(first)
@@ -262,28 +297,10 @@ class Tray(QObject):
         self._fit_header()
         running = self.c.running_key()
         suffix = {State.STARTING: "  (starting...)", State.SLEEPING: "  (sleeping)"}.get(st.state, "")
-        for pk, (a, name) in self._profiles.items():
-            on = pk == running
-            a.setChecked(on)
-            row = self._rows[pk.file]
-            ctx = f" ({self._ctx_text(row.model, row.model.profile(name))})"
-            a.setText(f"↻ Restart {name}{ctx}{suffix}" if on else f"▶ Start {name}{ctx}")
-        for key, (sub, name) in self._models.items():
-            sub.setTitle(name + (RUNNING_MARK if running and running.file == key else ""))
-            picked = self.c.next_ctx(key)
-            row = self._rows[key]
-            for value, a in self._ctx[key].items():
-                a.setChecked(value == picked)
-                if value is None:
-                    a.setText(self._default_ctx_text(row.model))
-            target = self.c.ctx_save_target(row.model)
-            save = self._save[key]
-            save.setText(f"Save picked context as default for '{target.name}'" if target
-                         else "Save picked context as default (start a profile first)")
-            save.setEnabled(bool(picked) and target is not None)
-        active = st.state in (State.STARTING, State.RUNNING, State.SLEEPING)
+        for mm in self._model_menus:
+            mm.refresh(running, suffix)
         serving = st.state in (State.RUNNING, State.SLEEPING, State.EXTERNAL)
-        self._stop.setEnabled(active)
+        self._stop.setEnabled(st.active)
         self._restart.setVisible(self.c.is_stale())
         for a in (self._web, self._copy_id, self._copy_curl):
             a.setEnabled(serving)
@@ -291,19 +308,6 @@ class Tray(QObject):
         self._log.setEnabled(log.exists())
         self._prev_log.setEnabled(prev_path(log).exists())
         self._keep_on_screen()
-
-    def _start(self, key: ProfileKey) -> None:
-        self.c.start(key)
-        self.refresh()
-
-    def _pick_ctx(self, model_file: str, value: int | None) -> None:
-        self.c.set_next_ctx(model_file, value)
-        self.refresh()
-
-    def _save_ctx(self, model_file: str) -> None:
-        self.c.save_ctx_default(model_file)
-        self._rows.update({k: r for r in self.c.rows() if (k := catalog.norm(r.model.file)) in self._rows})
-        self.refresh()
 
     # ---- actions ----
     def open_web_ui(self) -> None:

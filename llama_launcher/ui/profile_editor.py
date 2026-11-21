@@ -6,14 +6,25 @@ import os
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
-from PySide6.QtWidgets import (QComboBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
-                               QPlainTextEdit, QPushButton, QSpinBox, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (
+    QComboBox,
+    QFileDialog,
+    QFormLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPlainTextEdit,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
-from llama_launcher import catalog
-from llama_launcher.args import ArgError, format_argv, tokenize
+from llama_launcher import catalog, paths
+from llama_launcher.args import format_argv
 from llama_launcher.config import CACHE_TYPES, IDLE_MODES, ModelEntry, Profile, Settings
-from llama_launcher.launch import LaunchSpec, global_ctx, stem
-from llama_launcher.ui.widgets import IDLE_HELP, InheritSpin, info_button, with_info
+from llama_launcher.launch import LaunchSpec, Level, global_ctx, stem
+from llama_launcher.ui.widgets import IDLE_HELP, InheritSpin, choice_combo, info_button, with_info
 
 INHERIT = "(inherit)"
 NONE = "(none)"
@@ -42,10 +53,10 @@ class SidecarPicker(QWidget):
         self.combo.addItem(NONE, "")
         for p in compatible:
             self.combo.addItem(f"{os.path.basename(p)}   ({os.path.dirname(p)})", p)
-        if current and catalog.norm(current) not in {catalog.norm(p) for p in compatible}:
+        if current and paths.norm(current) not in {paths.norm(p) for p in compatible}:
             self.combo.addItem(f"{os.path.basename(current)}   (not a match for this model)", current)
         idx = max(0, next((i for i in range(self.combo.count())
-                           if self.combo.itemData(i) and catalog.norm(self.combo.itemData(i)) == catalog.norm(current)), 0))
+                           if self.combo.itemData(i) and paths.norm(self.combo.itemData(i)) == paths.norm(current)), 0))
         self.combo.setCurrentIndex(idx if current else 0)
         self.combo.blockSignals(False)
 
@@ -87,16 +98,9 @@ class ProfileEditor(QWidget):
         self.alias = QLineEdit()
         self.runtime = QComboBox()
         self.ctx = InheritSpin(minimum=256, maximum=4_194_304, step=1024, suffix=" tokens")
-        self.ctk = QComboBox()
-        self.ctv = QComboBox()
-        for c in (self.ctk, self.ctv):
-            c.addItem(INHERIT, "")
-            for t in CACHE_TYPES:
-                c.addItem(t, t)
-        self.idle_mode = QComboBox()
-        self.idle_mode.addItem(INHERIT, "")
-        for mode in IDLE_MODES:
-            self.idle_mode.addItem(mode, mode)
+        self.ctk = choice_combo(CACHE_TYPES, blank=INHERIT)
+        self.ctv = choice_combo(CACHE_TYPES, blank=INHERIT)
+        self.idle_mode = choice_combo(IDLE_MODES, blank=INHERIT)
         self.idle_seconds = InheritSpin(minimum=1, maximum=7 * 1440, suffix=" min", scale=60)
         self.args = QPlainTextEdit()
         self.args.setPlaceholderText("Extra llama-server flags for this profile; they override global args.")
@@ -145,7 +149,7 @@ class ProfileEditor(QWidget):
         self._loading = True
         self.model, self.profile = model, profile
         self.file_label.setText(model.file)
-        entry = next((e for e in entries if e.kind is catalog.Kind.MODEL and catalog.norm(e.path) == catalog.norm(model.file)), None)
+        entry = next((e for e in entries if e.kind is catalog.Kind.MODEL and paths.norm(e.path) == paths.norm(model.file)), None)
         sug = catalog.suggest(entry, entries) if entry and entry.info else None
         self.mmproj.set_options(model.mmproj, sug.mmproj_candidates if sug else [])
         self.draft.set_options(model.draft, sug.draft_candidates if sug else [])
@@ -160,7 +164,7 @@ class ProfileEditor(QWidget):
         for r in settings.runtimes:
             self.runtime.addItem(r.name, r.name)
         self._select(self.runtime, profile.runtime)
-        glob_ctx = global_ctx(settings.glob.args)
+        glob_ctx = global_ctx(settings.global_.args)
         model_ctx = entry.info.context_length if entry and entry.info else 0
         if glob_ctx:
             self.ctx.set_value(profile.ctx_size, glob_ctx, "from global args")
@@ -170,7 +174,7 @@ class ProfileEditor(QWidget):
         self._select(self.ctk, profile.cache_type_k)
         self._select(self.ctv, profile.cache_type_v)
         self._select(self.idle_mode, profile.idle_mode)
-        self.idle_seconds.set_value(profile.idle_seconds, settings.glob.idle_seconds, "from Global tab")
+        self.idle_seconds.set_value(profile.idle_seconds, settings.global_.idle_seconds, "from Global tab")
         self.args.setPlainText(profile.args)
         self.unset.setText(" ".join(profile.unset))
         self.setEnabled(True)
@@ -205,7 +209,7 @@ class ProfileEditor(QWidget):
             return
         self.preview.setPlainText(format_argv(spec.argv))
         lines = [f"⚠ {m}" for m in extra]
-        lines += [("✖ " if d.level == "error" else "⚠ ") + d.message for d in spec.diagnostics]
+        lines += [("✖ " if d.level == Level.ERROR else "⚠ ") + d.message for d in spec.diagnostics]
         self.problems.setText("\n".join(lines) if lines else "✔ Ready to launch")
-        bad = any(d.level == "error" for d in spec.diagnostics) or extra
+        bad = any(d.level == Level.ERROR for d in spec.diagnostics) or extra
         self.problems.setStyleSheet("color: #d23c3c;" if bad else "")

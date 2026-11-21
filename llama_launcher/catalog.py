@@ -11,6 +11,7 @@ from enum import Enum
 from pathlib import Path
 
 from llama_launcher.gguf import GGUFError, GGUFInfo, info_from_metadata, read_metadata
+from llama_launcher.paths import norm
 
 _SHARD_RE = re.compile(r"-(\d{5})-of-(\d{5})\.gguf$", re.IGNORECASE)
 _DRAFT_PREFIXES = ("mtp-", "dspark-", "dflash-")
@@ -49,10 +50,6 @@ class Suggestion:
     builtin_mtp: bool
     mmproj_candidates: list[str] = field(default_factory=list)
     draft_candidates: list[str] = field(default_factory=list)
-
-
-def norm(path: str) -> str:
-    return os.path.normcase(os.path.abspath(path))
 
 
 def classify(info: GGUFInfo, filename: str) -> Kind:

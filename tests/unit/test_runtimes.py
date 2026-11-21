@@ -3,9 +3,9 @@ import sys
 import time
 
 import pytest
-
 from conftest import FIXTURES
-from llama_launcher.runtimes import Runtime, RuntimeProbe, parse_help, parse_version
+
+from llama_launcher.runtimes import Runtime, RuntimeProbe, parse_version
 
 
 # R1

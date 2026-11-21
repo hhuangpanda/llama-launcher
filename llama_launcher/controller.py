@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import logging
 import os
+from enum import StrEnum
 
 from PySide6.QtCore import QFileSystemWatcher, QObject, QTimer, Signal
 
@@ -17,6 +18,16 @@ from llama_launcher.server import ServerManager, State, Status
 log = logging.getLogger("llama_launcher.controller")
 
 CONTEXT_CHOICES = (4096, 8192, 16384, 32768, 65536, 131072, 262144)
+
+
+class CtxSource(StrEnum):
+    """Where the context of a start comes from."""
+
+    PICKED = "picked"  # chosen in the tray for the next start
+    PROFILE = "profile"
+    GLOBAL = "global"  # -c/--ctx-size in global args
+    MODEL = "model"  # trained maximum; --fit may lower it
+    NONE = "none"
 
 
 class Controller(QObject):
@@ -106,7 +117,7 @@ class Controller(QObject):
 
     def find(self, key: ProfileKey, models: list[ModelEntry] | None = None) -> tuple[ModelEntry, Profile] | None:
         for row in self.rows(models):
-            if catalog.norm(row.model.file) == key.file:
+            if paths.norm(row.model.file) == key.file:
                 p = row.model.profile(key.name)
                 if p:
                     return row.model, p
@@ -128,37 +139,36 @@ class Controller(QObject):
               ctx_override: int | None = None) -> LaunchSpec:
         settings = settings or self.settings
         rt, info, problem = self.runtime(settings, profile)
-        spec = launch.build(settings, model, profile, rt if info else None, info.help if info else None,
+        spec = launch.build(settings, model, profile, rt if info else None, info.help_table if info else None,
                             info.version if info else None, ctx_override=ctx_override, get_info=self.info_cache.get)
         if problem:
-            spec.diagnostics = [d for d in spec.diagnostics if "no llama.cpp runtime" not in d.message]
-            spec.diagnostics.insert(0, launch.Diagnostic("error", problem))
+            spec.diagnostics = launch.Diagnostics(d for d in spec.diagnostics if "no llama.cpp runtime" not in d.message)
+            spec.diagnostics.insert(0, launch.Diagnostic(launch.Level.ERROR, problem))
         return spec
 
     # ---- server actions ----
     def next_ctx(self, model_file: str) -> int | None:
         """Context picked in the tray for this model's next start (None = profile default)."""
-        return self._next_ctx.get(catalog.norm(model_file))
+        return self._next_ctx.get(paths.norm(model_file))
 
     def set_next_ctx(self, model_file: str, ctx: int | None) -> None:
-        self._next_ctx[catalog.norm(model_file)] = ctx
+        self._next_ctx[paths.norm(model_file)] = ctx
 
-    def start_ctx(self, model: ModelEntry, profile: Profile, use_picked: bool = True) -> tuple[int, str]:
-        """Context a start of this profile asks for, and where it comes from:
-        picked (tray), profile, global (args), model (trained maximum; --fit may lower it), or none."""
+    def start_ctx(self, model: ModelEntry, profile: Profile, use_picked: bool = True) -> tuple[int, CtxSource]:
+        """Context a start of this profile asks for, and where it comes from."""
         picked = self.next_ctx(model.file) if use_picked else None
         if picked:
-            return picked, "picked"
+            return picked, CtxSource.PICKED
         if profile.ctx_size:
-            return profile.ctx_size, "profile"
-        g = launch.global_ctx(self.settings.glob.args)
+            return profile.ctx_size, CtxSource.PROFILE
+        g = launch.global_ctx(self.settings.global_.args)
         if g:
-            return g, "global"
+            return g, CtxSource.GLOBAL
         try:
             n = self.info_cache.get(model.file).context_length or 0
         except Exception:
             n = 0
-        return n, "model" if n else "none"
+        return n, CtxSource.MODEL if n else CtxSource.NONE
 
     def start(self, key: ProfileKey) -> LaunchSpec | None:
         found = self.find(key)
@@ -193,19 +203,19 @@ class Controller(QObject):
     def ctx_save_target(self, model: ModelEntry) -> Profile | None:
         """The profile "save as default" writes to: the running one of this model, else its only profile."""
         rk = self.running_key()
-        if rk and rk.file == catalog.norm(model.file):
+        if rk and rk.file == paths.norm(model.file):
             return model.profile(rk.name)
         return model.profiles[0] if len(model.profiles) == 1 else None
 
     def save_ctx_default(self, model_file: str) -> bool:
         """Writes the picked context into the target profile (materializing an implicit model)."""
         ctx = self.next_ctx(model_file)
-        row = next((r for r in self.rows() if catalog.norm(r.model.file) == catalog.norm(model_file)), None)
+        row = next((r for r in self.rows() if paths.norm(r.model.file) == paths.norm(model_file)), None)
         target = self.ctx_save_target(row.model) if row else None
         if not ctx or target is None:
             return False
         models = copy.deepcopy(self.config.models)
-        found = self.find(ProfileKey(catalog.norm(model_file), target.name), models)
+        found = self.find(ProfileKey(paths.norm(model_file), target.name), models)
         if not found:
             return False
         model, profile = found
@@ -266,8 +276,3 @@ def status_lines(st: Status) -> tuple[str, str]:
             ids = ", ".join(os.path.basename(i) for i in st.external_ids)
             return "Another server is using the port", ids
     return st.state.value, ""
-
-
-def status_line(st: Status) -> str:
-    first, second = status_lines(st)
-    return f"{first}: {second}" if second else first

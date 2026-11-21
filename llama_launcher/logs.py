@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import logging
-import os
 from pathlib import Path
+
+from llama_launcher.paths import replace_file
 
 
 def rotate(path: Path) -> str | None:
@@ -13,9 +14,9 @@ def rotate(path: Path) -> str | None:
     path.parent.mkdir(parents=True, exist_ok=True)
     if not path.exists():
         return None
-    prev = path.with_name(path.stem + ".prev" + path.suffix)
+    prev = prev_path(path)
     try:
-        os.replace(path, prev)
+        replace_file(path, prev)
         return None
     except OSError as e:
         try:

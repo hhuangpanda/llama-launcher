@@ -15,23 +15,40 @@ import copy
 import json
 import os
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable
+from enum import StrEnum
 
-from llama_launcher import args as A
 from llama_launcher import launch, paths
-from llama_launcher.catalog import norm
-from llama_launcher.config import Config, ModelEntry, Profile, RuntimeEntry, Settings
+from llama_launcher.args import ArgError, Flag, format_argv, parse, tokenize
+from llama_launcher.config import Config, IdleMode, ModelEntry, Profile, RuntimeEntry, Settings
+from llama_launcher.paths import norm
 from llama_launcher.runtimes import HelpTable, Runtime, RuntimeProbe
+from llama_launcher.server_flags import (
+    ALIAS,
+    CACHE_FLAGS,
+    CONNECTION,
+    CTX_SIZE,
+    FIELDS,
+    MANAGED,
+    MODEL,
+    SIDECAR_FLAGS,
+    SLEEP_IDLE_SECONDS,
+)
 
-# Flags that become profile/model fields or are managed by the app, never profile args.
-_FIELDS = ("--model", "--mmproj", "--spec-draft-model", "--alias", "--ctx-size", "--cache-type-k", "--cache-type-v")
-_DROPPED = ("--host", "--port", "--api-key", "--api-key-file")
-_IGNORED_IN_COMPARE = _DROPPED + ("--sleep-idle-seconds",)
+_IGNORED_IN_COMPARE = (*CONNECTION, SLEEP_IDLE_SECONDS)
 
 
-class ImportError_(ValueError):
+class CommandImportError(ValueError):
     pass
+
+
+class Outcome(StrEnum):
+    NEW = "new"
+    UNCHANGED = "unchanged"
+    CONFLICT = "conflict"
+    REPLACED = "replaced"
+    ERROR = "error"
 
 
 @dataclass
@@ -43,7 +60,7 @@ class Entry:
 @dataclass
 class Result:
     name: str
-    status: str  # new | unchanged | conflict | replaced | error
+    status: Outcome
     model: str = ""
     runtime: str = ""
     detail: str = ""
@@ -51,8 +68,8 @@ class Result:
     argv: list[str] = field(default_factory=list)
     profile: Profile | None = field(default=None, repr=False)
     model_entry: ModelEntry | None = field(default=None, repr=False)
-    help: HelpTable | None = field(default=None, repr=False)
-    flags: list[A.Flag] = field(default_factory=list, repr=False)
+    help_table: HelpTable | None = field(default=None, repr=False)
+    flags: list[Flag] = field(default_factory=list, repr=False)
 
 
 @dataclass
@@ -65,22 +82,22 @@ class Plan:
 
     @property
     def has_changes(self) -> bool:
-        return bool(self.setting_changes) or any(r.status in ("new", "replaced") for r in self.results)
+        return bool(self.setting_changes) or any(r.status in (Outcome.NEW, Outcome.REPLACED) for r in self.results)
 
 
 def load_entries(text: str) -> list[Entry]:
     try:
         data = json.loads(text.removeprefix("﻿"))  # PowerShell pipes add a BOM
     except ValueError as e:
-        raise ImportError_(f"not valid JSON: {e}") from None
+        raise CommandImportError(f"not valid JSON: {e}") from None
     if not isinstance(data, list):
-        raise ImportError_("expected a JSON list of {\"name\", \"command\"} objects")
+        raise CommandImportError("expected a JSON list of {\"name\", \"command\"} objects")
     out = []
     for i, item in enumerate(data):
         if not isinstance(item, dict) or not item.get("name") or not item.get("command"):
-            raise ImportError_(f"entry {i}: needs \"name\" and \"command\"")
+            raise CommandImportError(f"entry {i}: needs \"name\" and \"command\"")
         cmd = item["command"]
-        argv = A.tokenize(cmd) if isinstance(cmd, str) else [str(a) for a in cmd]
+        argv = tokenize(cmd) if isinstance(cmd, str) else [str(a) for a in cmd]
         out.append(Entry(str(item["name"]), argv))
     return out
 
@@ -101,8 +118,8 @@ def _under(path: str, folder: str) -> bool:
     return p == f or p.startswith(f + os.sep)
 
 
-def _canon(flags: list[A.Flag], help: HelpTable) -> dict[str, str | None]:
-    return {help.canonical(f.flag): f.value for f in flags}
+def _canon(flags: list[Flag], help_table: HelpTable) -> dict[str, str | None]:
+    return {help_table.canonical(f.flag): f.value for f in flags}
 
 
 def _quote(v: str) -> str:
@@ -111,181 +128,230 @@ def _quote(v: str) -> str:
     return f"'{v}'" if "'" not in v else '"' + v.replace('"', '\\"') + '"'
 
 
-def _join(flags: list[A.Flag]) -> str:
+def _join(flags: list[Flag]) -> str:
     return " ".join(f.flag if f.value is None else f"{f.flag} {_quote(f.value)}" for f in flags)
+
+
+@dataclass
+class _Parsed:
+    """One command whose flags parsed and that names a model."""
+
+    index: int  # position in the input; results are reported in this order
+    entry: Entry
+    help_table: HelpTable
+    flags: list[Flag]
+    values: dict[str, str | None] = field(init=False)
+
+    def __post_init__(self):
+        self.values = _canon(self.flags, self.help_table)
+
+    def canonical(self, flag: str) -> str:
+        return self.help_table.canonical(flag)
+
+    def get(self, flag: str) -> str | None:
+        return self.values.get(self.canonical(flag))
 
 
 def plan(entries: list[Entry], settings: Settings, models: list[ModelEntry],
          help_for: Callable[[str], HelpTable], replace: bool = False) -> Plan:
     s = copy.deepcopy(settings)
     out = copy.deepcopy(models)
-    results: list[Result] = []
-    changes: list[str] = []
+    parsed, results = _parse_entries(entries, help_for)
+    changes = _promote_shared(parsed, s)
+    runtimes, runtime_changes = _assign_runtimes(parsed, s)
+    changes += runtime_changes
     ignored: dict[str, int] = {}
+    for p, rt in zip(parsed, runtimes, strict=True):
+        if change := _add_model_folder(s, p.get(MODEL)):
+            changes.append(change)
+        connection = {p.canonical(x) for x in CONNECTION}
+        for f in p.flags:
+            if p.canonical(f.flag) in connection:
+                ignored[f.flag] = ignored.get(f.flag, 0) + 1
+        results.append((p.index, _import_profile(p, s, out, rt, replace)))
+    results.sort(key=lambda pair: pair[0])
+    notes = [f"ignored {', '.join(ignored)} in the commands: llama-launcher sets these itself"] if ignored else []
+    return Plan(s, out, [r for _, r in results], changes, notes)
 
-    parsed: list[tuple[Entry, HelpTable, list[A.Flag]]] = []
-    seen_names: set[tuple[str, str]] = set()
-    order = {id(e): i for i, e in enumerate(entries)}
-    pos: dict[int, int] = {}
-    for e in entries:
-        help = help_for(e.argv[0]) if e.argv else HelpTable()
+
+def _parse_entries(entries: list[Entry], help_for: Callable[[str], HelpTable]
+                   ) -> tuple[list[_Parsed], list[tuple[int, Result]]]:
+    """The usable commands, and an error result (with its input position) for each one that isn't."""
+    parsed: list[_Parsed] = []
+    errors: list[tuple[int, Result]] = []
+    seen: set[tuple[str, str]] = set()
+    for i, e in enumerate(entries):
+        help_table = help_for(e.argv[0]) if e.argv else HelpTable()
         try:
-            flags = A.parse(e.argv[1:], help)
-        except A.ArgError as err:
-            results.append(Result(e.name, "error", detail=str(err)))
-            pos[id(results[-1])] = order[id(e)]
+            p = _Parsed(i, e, help_table, parse(e.argv[1:], help_table))
+        except ArgError as err:
+            errors.append((i, Result(e.name, Outcome.ERROR, detail=str(err))))
             continue
-        model = next((f.value for f in flags if help.canonical(f.flag) == help.canonical("--model")), None)
+        model = p.get(MODEL)
         if not model:
-            results.append(Result(e.name, "error", detail="no -m/--model in the command"))
-            pos[id(results[-1])] = order[id(e)]
+            errors.append((i, Result(e.name, Outcome.ERROR, detail="no -m/--model in the command")))
             continue
-        if (norm(model), e.name) in seen_names:
-            results.append(Result(e.name, "error", model=model, detail="the input has this model + name twice"))
-            pos[id(results[-1])] = order[id(e)]
+        if (norm(model), e.name) in seen:
+            errors.append((i, Result(e.name, Outcome.ERROR, model=model, detail="the input has this model + name twice")))
             continue
-        seen_names.add((norm(model), e.name))
-        parsed.append((e, help, flags))
+        seen.add((norm(model), e.name))
+        parsed.append(p)
+    return parsed, errors
 
-    # Flags with the same value in every command become global args (only when global args are empty).
-    managed = {c for _, h, _ in parsed for c in (h.canonical(x) for x in _FIELDS + _DROPPED + ("--sleep-idle-seconds",))}
-    common: dict[str, A.Flag] = {}
-    if parsed and not s.glob.args:
-        e0, h0, f0 = parsed[0]
-        candidates = {h0.canonical(f.flag): f for f in f0 if h0.canonical(f.flag) not in managed}
-        for key, flag in candidates.items():
-            if all(_canon(fl, h).get(key, object()) == flag.value for _, h, fl in parsed[1:]):
-                common[key] = flag
-        if len(parsed) > 1 and common:
-            s.glob.args = _join(list(common.values()))
-            changes.append(f"global args = {s.glob.args}")
-        else:
-            common = {}
-    for field_name, flag in (("cache_type_k", "--cache-type-k"), ("cache_type_v", "--cache-type-v")):
-        values = {_canon(fl, h).get(h.canonical(flag)) for _, h, fl in parsed}
-        if len(parsed) > 1 and len(values) == 1 and None not in values and not getattr(s.glob, field_name):
-            setattr(s.glob, field_name, values.pop())
-            changes.append(f"global {field_name} = {getattr(s.glob, field_name)}")
 
-    runtime_of: dict[int, RuntimeEntry] = {}
+def _promote_shared(parsed: list[_Parsed], s: Settings) -> list[str]:
+    """With several commands, values they all share move to [global] when it doesn't set them yet:
+    unmanaged flags become global args, and cache types the global cache fields."""
+    changes: list[str] = []
+    if len(parsed) < 2:
+        return changes
+    if not s.global_.args:
+        first = parsed[0]
+        managed = {p.canonical(x) for p in parsed for x in MANAGED}
+        candidates = {first.canonical(f.flag): f for f in first.flags if first.canonical(f.flag) not in managed}
+        missing = object()
+        common = [f for key, f in candidates.items() if all(p.values.get(key, missing) == f.value for p in parsed[1:])]
+        if common:
+            s.global_.args = _join(common)
+            changes.append(f"global args = {s.global_.args}")
+    for attr, flag in CACHE_FLAGS.items():
+        values = {p.get(flag) for p in parsed}
+        if len(values) == 1 and None not in values and not getattr(s.global_, attr):
+            setattr(s.global_, attr, values.pop())
+            changes.append(f"global {attr} = {getattr(s.global_, attr)}")
+    return changes
+
+
+def _assign_runtimes(parsed: list[_Parsed], s: Settings) -> tuple[list[RuntimeEntry], list[str]]:
+    """Each command's runtime, matched by exe folder or added; the most used one becomes the default."""
+    runtimes: list[RuntimeEntry] = []
+    changes: list[str] = []
     counts: dict[str, int] = {}
-    for i, (e, _, _) in enumerate(parsed):
-        folder = os.path.dirname(e.argv[0])
+    for p in parsed:
+        folder = os.path.dirname(p.entry.argv[0])
         rt = next((r for r in s.runtimes if norm(r.path) == norm(folder)), None)
         if rt is None:
             rt = RuntimeEntry(_runtime_name(folder, {r.name for r in s.runtimes}), folder)
             s.runtimes.append(rt)
             changes.append(f"+ runtime {rt.name} = {folder}")
-        runtime_of[i] = rt
+        runtimes.append(rt)
         counts[rt.name] = counts.get(rt.name, 0) + 1
     if not s.default_runtime and counts:
         s.default_runtime = max(counts, key=counts.get)
         changes.append(f"default runtime = {s.default_runtime}")
+    return runtimes, changes
 
-    for i, (e, help, flags) in enumerate(parsed):
-        c = _canon(flags, help)
-        get = lambda name: c.get(help.canonical(name))
-        model_path = get("--model")
-        rt = runtime_of[i]
 
-        mfolder = os.path.dirname(model_path)
-        if not any(_under(mfolder, f) for f in s.model_folders):
-            s.model_folders.append(mfolder)
-            changes.append(f"+ model folder {mfolder}")
+def _add_model_folder(s: Settings, model_path: str) -> str | None:
+    folder = os.path.dirname(model_path)
+    if any(_under(folder, f) for f in s.model_folders):
+        return None
+    s.model_folders.append(folder)
+    return f"+ model folder {folder}"
 
-        model = next((m for m in out if norm(m.file) == norm(model_path)), None)
-        new_model = model is None
+
+def _import_profile(p: _Parsed, s: Settings, out: list[ModelEntry], rt: RuntimeEntry, replace: bool) -> Result:
+    """This command as a profile, added to `out` unless a different profile already has its name."""
+    model_path = p.get(MODEL)
+    model = next((m for m in out if norm(m.file) == norm(model_path)), None)
+    new_model = model is None
+    if new_model:
+        model = ModelEntry(model_path)
+    extra, detail = _merge_sidecars(p, model)
+    prof = _build_profile(p, s, rt, extra)
+
+    old = model.profile(p.entry.name)
+    res = Result(p.entry.name, Outcome.NEW, model=model_path, runtime=rt.name, detail="; ".join(detail),
+                 argv=p.entry.argv)
+    if old is not None:
+        if old == prof:
+            res.status = Outcome.UNCHANGED
+        elif replace:
+            res.status = Outcome.REPLACED
+        else:
+            res.status = Outcome.CONFLICT
+            res.detail = "; ".join(filter(None, [res.detail, "a different profile with this name exists (use --replace)"]))
+    if res.status in (Outcome.NEW, Outcome.REPLACED):
         if new_model:
-            model = ModelEntry(model_path)
-        extra: list[A.Flag] = []
-        detail = []
-        for attr, flag in (("mmproj", "--mmproj"), ("draft", "--spec-draft-model")):
-            v = get(flag)
-            if not v:
-                continue
-            if getattr(model, attr) and norm(getattr(model, attr)) != norm(v):
-                extra.append(A.Flag(flag, v))
-                detail.append(f"{attr} differs from the model's, kept in profile args")
-            else:
-                setattr(model, attr, v)
-
-        try:
-            glob = _canon(A.parse(A.tokenize(s.glob.args), help), help)
-        except A.ArgError:
-            glob = {}
-        covered = {k for k, v in glob.items() if k in c and c[k] == v}
-        unset = sorted(k for k in glob if k not in c)
-        skip = {help.canonical(x) for x in _FIELDS + _DROPPED} | covered
-        if help.canonical("--sleep-idle-seconds") in c:
-            skip.add(help.canonical("--sleep-idle-seconds"))
-        dropped = [f.flag for f in flags if help.canonical(f.flag) in {help.canonical(x) for x in _DROPPED}]
-        for d in dropped:
-            ignored[d] = ignored.get(d, 0) + 1
-        rest = [f for f in flags if help.canonical(f.flag) not in skip] + extra
-        alias = get("--alias") or ""
-        ctx = get("--ctx-size")
-        prof = Profile(
-            name=e.name,
-            alias="" if alias == launch.stem(model_path) else alias,
-            ctx_size=int(ctx) if ctx and ctx.isdigit() else 0,
-            cache_type_k="" if get("--cache-type-k") in (None, s.glob.cache_type_k) else get("--cache-type-k"),
-            cache_type_v="" if get("--cache-type-v") in (None, s.glob.cache_type_v) else get("--cache-type-v"),
-            args=_join(rest),
-            unset=unset,
-            runtime="" if rt.name == s.default_runtime else rt.name,
-        )
-        sleep = get("--sleep-idle-seconds")
-        if sleep and sleep.lstrip("-").isdigit():
-            if int(sleep) <= 0:
-                prof.idle_mode = "off"
-            elif not (s.glob.idle_mode == "sleep" and s.glob.idle_seconds == int(sleep)):
-                prof.idle_mode, prof.idle_seconds = "sleep", int(sleep)
-
-        old = model.profile(e.name)
-        res = Result(e.name, "new", model=model_path, runtime=rt.name, detail="; ".join(detail), argv=e.argv)
+            out.append(model)
         if old is not None:
-            if old == prof:
-                res.status = "unchanged"
-            elif replace:
-                res.status = "replaced"
-            else:
-                res.status = "conflict"
-                res.detail = "; ".join(filter(None, [res.detail, "a different profile with this name exists (use --replace)"]))
-        if res.status in ("new", "replaced"):
-            if new_model:
-                out.append(model)
-            if old is not None:
-                model.profiles[model.profiles.index(old)] = prof
-            else:
-                model.profiles.append(prof)
-        res.profile, res.model_entry, res.help, res.flags = prof, model, help, flags
-        _check_exact(res, s)
-        results.append(res)
-        pos[id(res)] = order[id(e)]
-    results.sort(key=lambda r: pos[id(r)])
-    notes = [f"ignored {', '.join(ignored)} in the commands: llama-launcher sets these itself"] if ignored else []
-    return Plan(s, out, results, changes, notes)
+            model.profiles[model.profiles.index(old)] = prof
+        else:
+            model.profiles.append(prof)
+    res.profile, res.model_entry, res.help_table, res.flags = prof, model, p.help_table, p.flags
+    _check_exact(res, s)
+    return res
+
+
+def _merge_sidecars(p: _Parsed, model: ModelEntry) -> tuple[list[Flag], list[str]]:
+    """Sidecar files go on the model; one that differs from the model's own stays in profile args."""
+    extra: list[Flag] = []
+    detail: list[str] = []
+    for attr, flag in SIDECAR_FLAGS.items():
+        v = p.get(flag)
+        if not v:
+            continue
+        if getattr(model, attr) and norm(getattr(model, attr)) != norm(v):
+            extra.append(Flag(flag, v))
+            detail.append(f"{attr} differs from the model's, kept in profile args")
+        else:
+            setattr(model, attr, v)
+    return extra, detail
+
+
+def _build_profile(p: _Parsed, s: Settings, rt: RuntimeEntry, extra: list[Flag]) -> Profile:
+    """Fields for the flags that have one; the rest are profile args, minus what global args already set."""
+    try:
+        global_flags = _canon(parse(tokenize(s.global_.args), p.help_table), p.help_table)
+    except ArgError:
+        global_flags = {}
+    covered = {k for k, v in global_flags.items() if k in p.values and p.values[k] == v}
+    skip = {p.canonical(x) for x in (*FIELDS, *CONNECTION)} | covered
+    if p.canonical(SLEEP_IDLE_SECONDS) in p.values:
+        skip.add(p.canonical(SLEEP_IDLE_SECONDS))
+    rest = [f for f in p.flags if p.canonical(f.flag) not in skip] + extra
+    model_path = p.get(MODEL)
+    alias = p.get(ALIAS) or ""
+    ctx = p.get(CTX_SIZE)
+    prof = Profile(
+        name=p.entry.name,
+        alias="" if alias == launch.stem(model_path) else alias,
+        ctx_size=int(ctx) if ctx and ctx.isdigit() else 0,
+        **{attr: "" if p.get(flag) in (None, getattr(s.global_, attr)) else p.get(flag)
+           for attr, flag in CACHE_FLAGS.items()},
+        args=_join(rest),
+        unset=sorted(k for k in global_flags if k not in p.values),
+        runtime="" if rt.name == s.default_runtime else rt.name,
+    )
+    sleep = p.get(SLEEP_IDLE_SECONDS)
+    if sleep and sleep.lstrip("-").isdigit():
+        if int(sleep) <= 0:
+            prof.idle_mode = IdleMode.OFF.value
+        elif not (s.global_.idle_mode == IdleMode.SLEEP and s.global_.idle_seconds == int(sleep)):
+            prof.idle_mode, prof.idle_seconds = IdleMode.SLEEP.value, int(sleep)
+    return prof
 
 
 def _check_exact(r: Result, s: Settings) -> None:
     """Does the imported profile rebuild the same flags as the original command?"""
-    help = r.help
+    help_table = r.help_table
     probe = copy.deepcopy(s)
-    probe.glob.idle_mode = "off"
-    spec = launch.build(probe, r.model_entry, r.profile, Runtime("x", "x", command_prefix=["x"]), help)
-    ignore = {help.canonical(x) for x in _IGNORED_IN_COMPARE}
+    probe.global_.idle_mode = IdleMode.OFF.value
+    spec = launch.build(probe, r.model_entry, r.profile, Runtime("x", "x", command_prefix=["x"]), help_table)
+    ignore = {help_table.canonical(x) for x in _IGNORED_IN_COMPARE}
     try:
-        built = {k: v for k, v in _canon(A.parse(spec.argv[1:], help), help).items() if k not in ignore}
-    except A.ArgError:
+        built = {k: v for k, v in _canon(parse(spec.argv[1:], help_table), help_table).items() if k not in ignore}
+    except ArgError:
         r.exact = False
         return
-    source = {k: v for k, v in _canon(r.flags, help).items() if k not in ignore}
-    source.setdefault(help.canonical("--alias"), launch.stem(source[help.canonical("--model")]))
+    source = {k: v for k, v in _canon(r.flags, help_table).items() if k not in ignore}
+    source.setdefault(help_table.canonical(ALIAS), launch.stem(source[help_table.canonical(MODEL)]))
     r.exact = built == source
 
 
 def report(p: Plan, show_commands: bool = False) -> str:
-    marks = {"new": "+", "unchanged": "=", "conflict": "!", "replaced": "~", "error": "x"}
+    marks = {Outcome.NEW: "+", Outcome.UNCHANGED: "=", Outcome.CONFLICT: "!", Outcome.REPLACED: "~",
+             Outcome.ERROR: "x"}
     lines = []
     for c in p.setting_changes:
         lines.append(f"  settings: {c}")
@@ -296,7 +362,7 @@ def report(p: Plan, show_commands: bool = False) -> str:
         if r.detail:
             lines.append(f"      {r.detail}")
         if show_commands and r.argv:
-            lines.append("      " + A.format_argv(r.argv))
+            lines.append("      " + format_argv(r.argv))
     counts = {k: sum(r.status == k for r in p.results) for k in marks}
     lines.append(", ".join(f"{v} {k}" for k, v in counts.items() if v) or "nothing to import")
     lines += [f"note: {n}" for n in p.notes]
@@ -319,7 +385,7 @@ def main(argv=None) -> int:
             text = f.read()
     try:
         entries = load_entries(text)
-    except ImportError_ as e:
+    except CommandImportError as e:
         print(f"error: {e}", file=sys.stderr)
         return 2
     cfg = Config(paths.settings_file(), paths.profiles_file())
@@ -329,7 +395,7 @@ def main(argv=None) -> int:
     def help_for(exe: str) -> HelpTable:
         rt = Runtime("import", os.path.dirname(exe))
         try:
-            return probe.info(rt).help
+            return probe.info(rt).help_table
         except RuntimeError as e:
             print(f"note: {e}; flags parsed without its flag list", file=sys.stderr)
             return HelpTable()

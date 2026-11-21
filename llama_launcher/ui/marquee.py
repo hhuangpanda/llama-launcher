@@ -3,7 +3,7 @@ holds there, then restarts. Width is whatever `measure` returns (pixels in the t
 
 from __future__ import annotations
 
-from typing import Callable
+from collections.abc import Callable
 
 
 class Marquee:
