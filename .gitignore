@@ -13,6 +13,8 @@ htmlcov/
 # local, per-machine
 .env
 .claude/settings.local.json
+AGENTS.local.md
+CLAUDE.local.md
 .vscode/
 .idea/
 

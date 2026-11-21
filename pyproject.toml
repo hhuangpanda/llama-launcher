@@ -3,6 +3,8 @@ name = "llama-launcher"
 version = "0.1.0"
 description = "Windows tray app that runs local GGUF models through llama-server"
 requires-python = ">=3.13"
+license = "MIT"
+license-files = ["LICENSE"]
 classifiers = ["Operating System :: Microsoft :: Windows", "Environment :: Win32 (MS Windows)"]
 dependencies = ["PySide6-Essentials>=6.12", "tomlkit>=0.15"]
 
@@ -14,7 +16,7 @@ build = ["pyinstaller>=6"]
 llama-launcher = "llama_launcher.__main__:main"
 
 [build-system]
-requires = ["setuptools>=75"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
