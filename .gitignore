@@ -1,0 +1,19 @@
+# environment and build output
+.venv/
+__pycache__/
+*.egg-info/
+build/
+dist/
+
+# test and tool caches
+.pytest_cache/
+.coverage
+htmlcov/
+
+# local, per-machine
+.env
+.claude/settings.local.json
+.vscode/
+.idea/
+
+# Not ignored on purpose: tests/fixtures/logs/*.log are captured llama-server runs the tests read.

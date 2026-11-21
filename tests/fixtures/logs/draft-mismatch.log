@@ -1,0 +1,13 @@
+0.00.242.913 I srv  llama_server: initializing ...
+0.00.242.935 I cmn  common_param: common_params_print_info: verbosity = 3 (adjust with the `-lv N` CLI arg)
+0.00.243.679 W srv  llama_server: security: no API key is set and CORS allows all origins (see https://github.com/ggml-org/llama.cpp/pull/25655)
+0.00.257.403 I srv    load_model: loading model 'C:\models\Qwen3.8-27B-GSQ-RCO-IQ3_XXS.gguf'
+0.01.922.367 E llama_init_from_model: failed to initialize the context: Gemma4Assistant requires ctx_other to be set (this warning is normal during memory fitting)
+0.02.040.379 W operator(): failed to measure the memory of the extra model, fitting without it: failed to create llama_context from model
+0.02.040.626 W common_fit_params: failed to fit params to free device memory: n_gpu_layers already set by user to -2, abort
+0.22.313.272 I cmn          init: llama threadpool init, n_threads = 12
+0.22.627.133 I common_speculative_init_result: loading draft model 'C:\models\mtp-gemma-4-12B-it-Q4_0.gguf'
+0.23.223.382 W load: control-looking token:     50 '<|tool_response>' was not control-type; this is probably a bug in the model. its type will be overridden
+0.23.223.522 W load: control-looking token:    212 '</s>' was not control-type; this is probably a bug in the model. its type will be overridden
+0.23.328.530 W load: '</s>' is a normal token here, removing it from EOG list
+0.23.632.925 W llama_kv_cache: layer   3: sharing with layer 63. k = 0000000D5A000000, v = 0000000D5A800000

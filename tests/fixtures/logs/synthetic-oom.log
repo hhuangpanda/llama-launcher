@@ -1,0 +1,8 @@
+# synthetic: an OOM couldn't be reproduced on this machine (WDDM spills to shared memory instead of failing).
+# Lines follow llama.cpp's CUDA allocation failure messages.
+0.05.101.220 I llama_kv_cache:      CUDA0 KV buffer size = 24576.00 MiB
+0.05.101.410 E ggml_backend_cuda_buffer_type_alloc_buffer: allocating 24576.00 MiB on device 0: cudaMalloc failed: out of memory
+0.05.101.420 E alloc_tensor_range: failed to allocate CUDA0 buffer of size 25769803776
+0.05.101.650 E llama_init_from_model: failed to initialize the context: failed to allocate buffer for kv cache
+0.05.101.990 E srv    load_model: failed to load model, 'C:\models\Qwen3.8-27B-UD-Q2_K_XL.gguf'
+0.05.110.020 E srv  llama_server: exiting due to model loading error

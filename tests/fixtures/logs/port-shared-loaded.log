@@ -1,0 +1,12 @@
+0.00.231.992 W DEPRECATED: argument '--port' specified multiple times, use comma-separated values instead (only last value will be used)
+0.00.232.407 I srv  llama_server: initializing ...
+0.00.232.421 I cmn  common_param: common_params_print_info: verbosity = 3 (adjust with the `-lv N` CLI arg)
+0.00.233.189 W srv  llama_server: security: no API key is set and CORS allows all origins (see https://github.com/ggml-org/llama.cpp/pull/25655)
+0.00.248.563 I srv    load_model: loading model 'C:\models\gemma-4-12B-it-qat-UD-Q4_K_XL.gguf'
+0.01.957.911 W load: control-looking token:     50 '<|tool_response>' was not control-type; this is probably a bug in the model. its type will be overridden
+0.01.958.052 W load: control-looking token:    212 '</s>' was not control-type; this is probably a bug in the model. its type will be overridden
+0.02.065.746 W load: '</s>' is a normal token here, removing it from EOG list
+0.07.302.868 I cmn          init: llama threadpool init, n_threads = 12
+0.07.622.749 I srv    load_model: initializing, n_slots = 4, n_ctx_slot = 4096, kv_unified = 'true'
+0.07.657.528 I srv  llama_server: model loaded
+0.07.657.558 I srv  llama_server: listening on http://127.0.0.1:9931

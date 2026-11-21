@@ -1,0 +1,40 @@
+0.00.008.797 I srv  llama_server: initializing ...
+0.00.225.323 I cmn  common_param: common_params_print_info: verbosity = 3 (adjust with the `-lv N` CLI arg)
+0.00.236.408 I srv    load_model: loading model 'C:\models\gemma-4-12B-it-qat-UD-Q4_K_XL.gguf'
+0.01.768.654 W load: control-looking token:     50 '<|tool_response>' was not control-type; this is probably a bug in the model. its type will be overridden
+0.01.768.787 W load: control-looking token:    212 '</s>' was not control-type; this is probably a bug in the model. its type will be overridden
+0.01.869.360 W load: '</s>' is a normal token here, removing it from EOG list
+0.12.003.429 I cmn          init: llama threadpool init, n_threads = 12
+0.12.234.077 I srv    load_model: initializing, n_slots = 4, n_ctx_slot = 4096, kv_unified = 'true'
+0.12.258.777 I srv  llama_server: model loaded
+0.12.258.800 I srv  llama_server: listening on http://127.0.0.1:9951
+0.12.740.228 W srv    operator(): unauthorized: Invalid API Key
+0.12.751.363 I slot get_availabl: id  0 | task -1 | selected slot by LRU, n_tokens = 0, t_last = -1
+0.12.751.505 I slot launch_slot_: id  0 | task 1 | processing task, is_child = 0
+0.13.207.881 I slot print_timing: id  0 | task 1 | prompt eval time =     215.21 ms /    18 tokens (   11.96 ms per token,    83.64 tokens per second)
+0.13.207.894 I slot print_timing: id  0 | task 1 |        eval time =     240.68 ms /     8 tokens (   34.38 ms per token,    29.08 tokens per second)
+0.13.207.915 I slot print_timing: id  0 | task 1 |       total time =     455.88 ms /    26 tokens
+0.13.207.916 I slot print_timing: id  0 | task 1 |    graphs reused =          7
+0.13.207.918 I slot print_timing: id  0 | task 1 |   graph reallocs =          0    /     0        (same size) / (changed size)
+0.13.207.954 I slot      release: id  0 | task 1 | stop processing: n_tokens = 25, truncated = 0
+0.13.331.232 W srv    operator(): unauthorized: Invalid API Key
+0.28.450.644 I que    start_loop: entering sleeping state
+0.28.450.924 I srv  handle_sleep: server is entering sleeping state
+0.38.445.875 I que    start_loop: exiting sleeping state
+0.38.445.886 I srv  handle_sleep: server is exiting sleeping state
+0.38.445.930 I srv    load_model: loading model 'C:\models\gemma-4-12B-it-qat-UD-Q4_K_XL.gguf'
+0.39.874.619 W load: control-looking token:     50 '<|tool_response>' was not control-type; this is probably a bug in the model. its type will be overridden
+0.39.874.753 W load: control-looking token:    212 '</s>' was not control-type; this is probably a bug in the model. its type will be overridden
+0.39.976.052 W load: '</s>' is a normal token here, removing it from EOG list
+0.44.864.779 I cmn          init: llama threadpool init, n_threads = 12
+0.44.961.098 I srv    load_model: initializing, n_slots = 4, n_ctx_slot = 4096, kv_unified = 'true'
+0.44.967.776 W srv    operator(): unauthorized: Invalid API Key
+0.44.971.916 I slot get_availabl: id  0 | task -1 | selected slot by LRU, n_tokens = 0, t_last = -1
+0.44.972.036 I slot launch_slot_: id  0 | task 14 | processing task, is_child = 0
+0.45.354.772 I slot print_timing: id  0 | task 14 | prompt eval time =     162.53 ms /    18 tokens (    9.03 ms per token,   110.75 tokens per second)
+0.45.354.791 I slot print_timing: id  0 | task 14 |        eval time =     220.12 ms /     8 tokens (   31.45 ms per token,    31.80 tokens per second)
+0.45.354.794 I slot print_timing: id  0 | task 14 |       total time =     382.65 ms /    26 tokens
+0.45.354.795 I slot print_timing: id  0 | task 14 |    graphs reused =          7
+0.45.354.797 I slot print_timing: id  0 | task 14 |   graph reallocs =          0    /     0        (same size) / (changed size)
+0.45.354.834 I slot      release: id  0 | task 14 | stop processing: n_tokens = 25, truncated = 0
+0.45.463.573 W srv    operator(): unauthorized: Invalid API Key

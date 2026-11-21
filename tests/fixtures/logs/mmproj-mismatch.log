@@ -1,0 +1,18 @@
+0.00.219.777 I srv  llama_server: initializing ...
+0.00.219.798 I cmn  common_param: common_params_print_info: verbosity = 3 (adjust with the `-lv N` CLI arg)
+0.00.220.506 W srv  llama_server: security: no API key is set and CORS allows all origins (see https://github.com/ggml-org/llama.cpp/pull/25655)
+0.00.239.843 I srv    load_model: loading model 'C:\models\gemma-4-12B-it-qat-UD-Q4_K_XL.gguf'
+0.01.967.004 W load: control-looking token:     50 '<|tool_response>' was not control-type; this is probably a bug in the model. its type will be overridden
+0.01.967.162 W load: control-looking token:    212 '</s>' was not control-type; this is probably a bug in the model. its type will be overridden
+0.02.072.897 W load: '</s>' is a normal token here, removing it from EOG list
+0.06.815.834 I cmn          init: llama threadpool init, n_threads = 12
+0.06.982.121 W load_hparams: Qwen-VL models require at minimum 1024 image tokens to function correctly on grounding tasks
+0.06.982.133 W load_hparams: if you encounter problems with accuracy, try adding --image-min-tokens 1024
+0.06.982.134 W load_hparams: more info: https://github.com/ggml-org/llama.cpp/issues/16842
+
+0.18.387.061 E mtmd_init_from_file: error: mismatch between text model (n_embd = 3840) and mmproj (n_embd = 2048)
+hint: you may be using wrong mmproj
+
+0.18.387.078 E srv    load_model: failed to load multimodal model, 'C:\models\Qwen3.6-35B-A3B-mmproj-F16.gguf'
+0.18.387.092 I srv    operator(): operator(): cleaning up before exit...
+0.18.392.434 E srv  llama_server: exiting due to model loading error
