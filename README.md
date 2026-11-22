@@ -1,4 +1,4 @@
-# <img src="docs/images/logo.png" alt="" width="36" align="top"> llama-launcher
+# llama-launcher <img src="docs/images/logo.png" alt="" width="40" align="right">
 
 Windows tray app that runs local GGUF models through llama-server, one at a time,
 with per-model launch profiles and your own llama.cpp builds.
