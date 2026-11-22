@@ -4,13 +4,17 @@ Test-case IDs used in test names and comments (A1, P7, U3...) are in `docs/test-
 
 ## Environment
 
-- Python 3.13, venv in `.venv`. Run everything with `.venv\Scripts\python.exe`, never a bare `python`.
+- Python 3.13, venv in `.venv`.
+  Run everything with `.venv\Scripts\python.exe`, never a bare `python`.
 - Depend on `PySide6-Essentials`, not the `PySide6` meta package (it pulls WebEngine; ~1 GB).
-- Tests: `.venv\Scripts\python.exe -m pytest`. Real-binary tests are opt-in (`-m real`) and read
-  `LLAMA_LAUNCHER_TEST_MODELS` / `LLAMA_LAUNCHER_TEST_RUNTIMES` from the environment or the git-ignored
-  `.env` (see `.env.example`); never hard-code machine paths.
+- Tests: `.venv\Scripts\python.exe -m pytest`.
+  Real-binary tests are opt-in (`-m real`)
+  and read `LLAMA_LAUNCHER_TEST_MODELS` / `LLAMA_LAUNCHER_TEST_RUNTIMES`
+  from the environment or the git-ignored `.env` (see `.env.example`);
+  never hard-code machine paths.
 - Lint and format: `.venv\Scripts\python.exe -m ruff check .` and `.venv\Scripts\python.exe -m ruff format .`
-  (config in `pyproject.toml`); run both before committing.
+  (config in `pyproject.toml`);
+  run both before committing.
 - Build: `.venv\Scripts\python.exe tools\build.py` -> `dist\llama-launcher\`.
 - Imports are absolute (`from llama_launcher.x import y`).
 
@@ -33,22 +37,27 @@ Test-case IDs used in test names and comments (A1, P7, U3...) are in `docs/test-
 
 ## Rules
 
-- Only ever stop the PID this app spawned (`ServerManager._proc`). Never kill by name, never adopt
-  or stop a server someone else started: it shows as `EXTERNAL`.
+- Only ever stop the PID this app spawned (`ServerManager._proc`).
+  Never kill by name, never adopt or stop a server someone else started: it shows as `EXTERNAL`.
 - Children are in a kill-on-close Job Object, so they die with the app.
-- Check the port before spawning: on Windows llama-server binds a port another server already
-  listens on (address reuse), so a bind failure can't be relied on.
-- `launch.build` must stay pure; anything that touches disk is passed in (`get_info`, runtime).
-- Tests spawn the fake server with `sys._base_executable`: the venv `python.exe` is a redirector
-  whose real interpreter is a grandchild.
+- Check the port before spawning:
+  on Windows llama-server binds a port another server already listens on (address reuse),
+  so a bind failure can't be relied on.
+- `launch.build` must stay pure;
+  anything that touches disk is passed in (`get_info`, runtime).
+- Tests spawn the fake server with `sys._base_executable`:
+  the venv `python.exe` is a redirector whose real interpreter is a grandchild.
 - Fixture logs were captured from real runs; keep machine-specific paths out of them.
 
 ## llama-server facts (verified on b11860 and b12198)
 
 - No flag is repeatable; lists are comma-separated, so later-wins is always right.
-- `/props` has `is_sleeping`; `/health` needs no API key, `/props` and `/v1/models` do.
+- `/props` has `is_sleeping`;
+  `/health` needs no API key, `/props` and `/v1/models` do.
 - `LLAMA_API_KEY` env works; the key never goes on the command line.
 - `--host` takes a comma-separated list (e.g. `127.0.0.1,<tailscale ip>`).
-- Out-of-VRAM rarely fails on Windows: WDDM spills to shared memory and generation slows instead.
-- Crashes: wrong draft model 0xC0000005; an MTP draft without `--spec-type draft-mtp` 0xC0000409.
+- Out-of-VRAM rarely fails on Windows:
+  WDDM spills to shared memory and generation slows instead.
+- Crashes: wrong draft model 0xC0000005;
+  an MTP draft without `--spec-type draft-mtp` 0xC0000409.
   Wrong mmproj exits 1 with an n_embd mismatch line.

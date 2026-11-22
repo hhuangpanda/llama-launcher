@@ -1,5 +1,5 @@
-Captured 2026-11-20 from `C:\llama` (b11860) on an RTX 5080 Laptop GPU, except
-`synthetic-oom.log`.
+Captured 2026-11-20 from llama-server b11860 on an RTX 5080 Laptop GPU,
+except `synthetic-oom.log`.
 
 | file | exit | what |
 |---|---|---|
