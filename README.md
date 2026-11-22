@@ -3,6 +3,12 @@
 Windows tray app that runs local GGUF models through llama-server, one at a time,
 with per-model launch profiles and your own llama.cpp builds.
 
+## Requirements
+
+- Windows 10 or later, Python 3.13 (to run from source).
+- A llama.cpp `llama-server` build (a release zip or your own); the app does not ship one.
+- GGUF models.
+
 ## Run
 
 ```powershell
@@ -81,3 +87,7 @@ set `LLAMA_LAUNCHER_TEST_MODELS` (a model folder)
 and `LLAMA_LAUNCHER_TEST_RUNTIMES` (llama-server folders, `;`-separated) first,
 in the environment or in a git-ignored `.env` (copy `.env.example`).
 Test IDs are listed in [docs/test-cases.md](docs/test-cases.md).
+
+## License
+
+MIT, see [LICENSE](LICENSE).
