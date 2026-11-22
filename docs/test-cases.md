@@ -126,6 +126,7 @@ GGUF fixtures are tiny header-only files written by a test helper. `tests/real` 
 | U9 | launch at startup toggle | Run key created/removed with the right command line |
 | U10 | second app instance | exits immediately, first instance opens Settings |
 | U11 | `llama-launcher --quit` (quit message) | running instance quits the same way as the tray's Quit; Settings not opened |
+| U12 | app start / tray menu | a brief card near the tray says it's running, a click opens the menu; menu items have icons |
 
 ### Real (opt-in, `pytest -m real`)
 

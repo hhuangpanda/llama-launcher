@@ -124,8 +124,8 @@ def test_tray_menu_from_config(env):
     menu = actions(app.tray.menu)
     swift_menu = menu["Qwen3.8-27B-Swift-1.5-ajgazin-Orca-MTP-RCO-IQ3_XXS"]
     assert list(swift_menu)[:3] == ["profile:swift-orca", "profile:mtp", "Context for the next start"]
-    assert swift_menu["profile:mtp"].text() == "▶ Start mtp (up to 256k)"
-    assert swift_menu["profile:swift-orca"].text() == "▶ Start swift-orca (100k)"
+    assert swift_menu["profile:mtp"].text() == "Start mtp (up to 256k)"
+    assert swift_menu["profile:swift-orca"].text() == "Start swift-orca (100k)"
     assert swift_menu["Profile default"].isChecked() and "128k" in swift_menu
     single = menu["Qwen3.6-35B-A3B-UD-Q4_K_M"]
     assert "profile:default_profile" in single and "Profile default (up to 256k)" in single
@@ -147,12 +147,12 @@ def test_start_from_tray_updates_menu_live(env, qtbot):
 
     qtbot.waitUntil(lambda: c.manager.status.state is State.RUNNING, timeout=10000)
     qtbot.waitUntil(lambda: head().startswith("Running"))
-    assert sub["profile:mtp"].isChecked() and sub["profile:mtp"].text() == "↻ Restart mtp (up to 256k)"
+    assert sub["profile:mtp"].isChecked() and sub["profile:mtp"].text() == "Restart mtp (up to 256k)"
     assert menu["Stop"].isEnabled() and menu["Open web UI"].isEnabled()
-    assert any(a.text().startswith("Qwen3.8-27B-Swift") and a.text().endswith("●") for a in app.tray.menu.actions())
+    assert [mm.running for mm in app.tray._model_menus if mm.name.startswith("Qwen3.8-27B-Swift")] == [True]
     menu["Stop"].trigger()
     qtbot.waitUntil(lambda: head() == "Stopped")
-    assert not sub["profile:mtp"].isChecked() and sub["profile:mtp"].text() == "▶ Start mtp (up to 256k)"
+    assert not sub["profile:mtp"].isChecked() and sub["profile:mtp"].text() == "Start mtp (up to 256k)"
 
 
 # clicks on sticky items keep the menu open
@@ -237,8 +237,8 @@ def test_context_picker_and_save_default(env, qtbot):
     sub = actions(app.tray.menu)["Qwen3.8-27B-Swift-1.5-ajgazin-Orca-MTP-RCO-IQ3_XXS"]
     sub["32k"].trigger()
     assert c.manager.status.state is State.STOPPED and sub["32k"].isChecked()
-    assert sub["profile:swift-orca"].text() == "▶ Start swift-orca (32k)"
-    assert sub["profile:mtp"].text() == "▶ Start mtp (32k)"
+    assert sub["profile:swift-orca"].text() == "Start swift-orca (32k)"
+    assert sub["profile:mtp"].text() == "Start mtp (32k)"
     assert not sub["Save picked context as default (start a profile first)"].isEnabled()
     sub["profile:swift-orca"].trigger()
     qtbot.waitUntil(lambda: c.manager.status.state is State.RUNNING, timeout=10000)
@@ -247,7 +247,7 @@ def test_context_picker_and_save_default(env, qtbot):
     assert c.config.models[0].profile("swift-orca").ctx_size == 102400
     sub["64k"].trigger()  # running model: pick a new context -> restart offered
     assert actions(app.tray.menu)["Restart to apply changes"].isVisible()
-    sub = actions(app.tray.menu)["Qwen3.8-27B-Swift-1.5-ajgazin-Orca-MTP-RCO-IQ3_XXS  ●"]  # labels updated live
+    sub = actions(app.tray.menu)["Qwen3.8-27B-Swift-1.5-ajgazin-Orca-MTP-RCO-IQ3_XXS"]  # labels updated live
     sub["Save picked context as default for 'swift-orca'"].trigger()
     text = c.config.profiles_path.read_text()
     assert text.count("ctx_size") == 1 and "ctx_size = 65536" in text
@@ -430,3 +430,19 @@ def test_menu_keeps_size_and_stays_on_screen_when_a_model_starts(env, qtbot):
     )
     assert menu.size() == size and area.contains(menu.geometry())
     menu.hide()
+
+
+# U12
+def test_started_toast_and_menu_icons(env, qtbot):
+    app, *_ = env
+    app.tray.rebuild()
+    assert all(not a.icon().isNull() for a in app.tray.menu.actions() if a.text() and not a.isSeparator())
+    app.show_started()
+    toast = app._toast
+    qtbot.waitUntil(toast.isVisible)
+    area = QGuiApplication.primaryScreen().availableGeometry()
+    assert area.contains(toast.frameGeometry())
+    with qtbot.waitSignal(toast.destroyed, timeout=5000):
+        qtbot.mouseClick(toast, Qt.LeftButton)
+    qtbot.waitUntil(app.tray.menu.isVisible)
+    app.tray.menu.hide()

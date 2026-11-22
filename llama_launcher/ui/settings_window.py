@@ -10,8 +10,7 @@ from PySide6.QtWidgets import QHBoxLayout, QLabel, QMessageBox, QPushButton, QTa
 
 from llama_launcher.catalog import FileEntry
 from llama_launcher.controller import Controller
-from llama_launcher.server import State
-from llama_launcher.ui.icons import state_icon
+from llama_launcher.ui.icons import app_icon
 from llama_launcher.ui.tabs.folders import FoldersTab
 from llama_launcher.ui.tabs.general import GeneralTab
 from llama_launcher.ui.tabs.global_options import GlobalTab
@@ -26,7 +25,7 @@ class SettingsWindow(QWidget):
         super().__init__(None, Qt.Window)
         self.c = controller
         self.setWindowTitle(TITLE)
-        self.setWindowIcon(state_icon(State.RUNNING))
+        self.setWindowIcon(app_icon())
         self.resize(1100, 760)
         self.dirty = False
         self.loading = False

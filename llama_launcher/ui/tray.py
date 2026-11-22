@@ -6,7 +6,17 @@ from collections.abc import Callable
 
 from PySide6.QtCore import QObject, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QAction, QActionGroup, QCursor, QDesktopServices, QGuiApplication
-from PySide6.QtWidgets import QLabel, QMenu, QSizePolicy, QSystemTrayIcon, QVBoxLayout, QWidget, QWidgetAction
+from PySide6.QtWidgets import (
+    QHBoxLayout,
+    QLabel,
+    QMenu,
+    QSizePolicy,
+    QStyle,
+    QSystemTrayIcon,
+    QVBoxLayout,
+    QWidget,
+    QWidgetAction,
+)
 
 from llama_launcher import paths
 from llama_launcher.config import Profile
@@ -14,11 +24,12 @@ from llama_launcher.controller import CONTEXT_CHOICES, Controller, CtxSource, st
 from llama_launcher.launch import ModelRow, ProfileKey, ctx_label, stem
 from llama_launcher.logs import prev_path
 from llama_launcher.server import State, Status
-from llama_launcher.ui.icons import state_icon
+from llama_launcher.ui.icons import dot_icon, emoji_icon, state_icon
 from llama_launcher.ui.marquee import Marquee
 from llama_launcher.ui.widgets import open_path
 
-RUNNING_MARK = "  ●"
+MODEL_ICON = "🦙"
+DOT_GAP = 8  # between the header's state dot and its text
 HEADER_PX = 500  # minimum text width of the header; the menu is at least this wide
 HEADER_MARGIN = 11  # left/right padding of the header text, close to the menu items' text inset
 
@@ -58,32 +69,50 @@ class StickyMenu(QMenu):
         super().keyPressEvent(e)
 
 
+def _label(text: str) -> str:
+    """Menu text shown as-is: a lone & would otherwise become a keyboard-shortcut underline."""
+    return text.replace("&", "&&")
+
+
 def _sticky(a: QAction) -> QAction:
     a.setProperty("sticky", True)
     return a
 
 
 class Header(QWidget):
-    """The two status lines at the top of the menu. They take the menu's full width but never
-    widen it (their text is cut to fit by the marquees), so the menu keeps one size."""
+    """A state dot and the two status lines at the top of the menu. The lines take the menu's full width
+    but never widen it (their text is cut to fit by the marquees), so the menu keeps one size."""
 
     resized = Signal()
 
     def __init__(self, min_text_px: int):
         super().__init__()
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(HEADER_MARGIN, 5, HEADER_MARGIN, 5)
-        lay.setSpacing(4)
+        row = QHBoxLayout(self)
+        row.setContentsMargins(HEADER_MARGIN, 5, HEADER_MARGIN, 5)
+        row.setSpacing(DOT_GAP)
+        self.dot_px = self.style().pixelMetric(QStyle.PM_SmallIconSize)
+        self.dot = QLabel()
+        self.dot.setFixedSize(self.dot_px, self.dot_px)
+        row.addWidget(self.dot, 0, Qt.AlignVCenter)
+        lines = QVBoxLayout()
+        lines.setSpacing(4)
+        row.addLayout(lines, 1)
         self.labels = (QLabel(), QLabel())
         for label in self.labels:
             label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
             label.setEnabled(False)  # greyed like a disabled menu item
-            lay.addWidget(label)
-        self.setMinimumWidth(min_text_px + 2 * HEADER_MARGIN)
+            lines.addWidget(label)
+        self.setMinimumWidth(min_text_px + self._chrome())
+
+    def _chrome(self) -> int:
+        return 2 * HEADER_MARGIN + self.dot_px + DOT_GAP
+
+    def set_state(self, state: State) -> None:
+        self.dot.setPixmap(dot_icon(state).pixmap(self.dot_px, self.dot_px))
 
     def text_width(self) -> int:
         # From the header's own width: its labels are resized only after this widget's resize event.
-        return max(self.width(), self.minimumWidth()) - 2 * HEADER_MARGIN
+        return max(self.width(), self.minimumWidth()) - self._chrome()
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
@@ -99,12 +128,12 @@ class ModelMenu:
         self.key = paths.norm(row.model.file)
         self.name = stem(row.model.file)
         self._changed = changed
-        self.menu = StickyMenu(self.name, parent)
+        self.menu = StickyMenu(_label(self.name), parent)
         self.menu.setObjectName(f"model:{self.name}")
 
         self._starts: dict[str, QAction] = {}
         for p in row.model.profiles:
-            a = _sticky(self.menu.addAction(f"▶ Start {p.name}"))
+            a = _sticky(self.menu.addAction(_label(f"Start {p.name}")))
             a.setObjectName(f"profile:{p.name}")
             a.setCheckable(True)
             a.triggered.connect(lambda checked=False, name=p.name: self._start(name))
@@ -120,7 +149,7 @@ class ModelMenu:
             a.triggered.connect(lambda checked=False, v=value: self._pick_ctx(v))
             self._ctx[value] = a
         self.menu.addSeparator()
-        self._save = _sticky(self.menu.addAction("", self._save_ctx))
+        self._save = _sticky(self.menu.addAction(emoji_icon("💾"), "", self._save_ctx))
 
     def refresh(self, running: ProfileKey | None, suffix: str) -> None:
         model = self.row.model
@@ -128,8 +157,10 @@ class ModelMenu:
             on = running == ProfileKey(self.key, name)
             a.setChecked(on)
             ctx = f" ({self._ctx_text(model.profile(name))})"
-            a.setText(f"↻ Restart {name}{ctx}{suffix}" if on else f"▶ Start {name}{ctx}")
-        self.menu.setTitle(self.name + (RUNNING_MARK if running and running.file == self.key else ""))
+            a.setText(_label(f"Restart {name}{ctx}{suffix}" if on else f"Start {name}{ctx}"))
+            a.setIcon(emoji_icon("🔄" if on else "▶️"))
+        self.running = running is not None and running.file == self.key
+        self.menu.setIcon(dot_icon(State.RUNNING) if self.running else emoji_icon(MODEL_ICON))
         picked = self.c.next_ctx(self.key)
         for value, a in self._ctx.items():
             a.setChecked(value == picked)
@@ -177,6 +208,7 @@ class Tray(QObject):
         self.open_settings = open_settings
         self.quit_app = quit_app
         self.icon = QSystemTrayIcon(state_icon(State.STOPPED))
+        self.icon.setToolTip("llama-launcher")
         self.menu = StickyMenu()
         self.menu.aboutToShow.connect(self.rebuild)
         measure = self.menu.fontMetrics().horizontalAdvance
@@ -239,30 +271,30 @@ class Tray(QObject):
         m.addSeparator()
         rows = self.c.rows()
         if not rows:
-            m.addAction("No models: add a model folder in Settings").setEnabled(False)
+            m.addAction(emoji_icon("➕"), "No models: add a model folder in Settings").setEnabled(False)
         self._model_menus = []
         for row in rows:
             if not row.exists:
-                m.addAction(f"{stem(row.model.file)} (file missing)").setEnabled(False)
+                m.addAction(emoji_icon("⚠️"), _label(f"{stem(row.model.file)} (file missing)")).setEnabled(False)
                 continue
             mm = ModelMenu(m, self.c, row, self.refresh)
             m.addMenu(mm.menu)
             self._model_menus.append(mm)
         m.addSeparator()
-        self._stop = _sticky(m.addAction("Stop", self.c.stop))
-        self._restart = _sticky(m.addAction("Restart to apply changes", self.c.restart))
+        self._stop = _sticky(m.addAction(emoji_icon("⏹️"), "Stop", self.c.stop))
+        self._restart = _sticky(m.addAction(emoji_icon("🔄"), "Restart to apply changes", self.c.restart))
         m.addSeparator()
-        self._web = m.addAction("Open web UI", self.open_web_ui)
-        self._copy_id = _sticky(m.addAction("Copy model id", self.copy_model_id))
-        self._copy_curl = _sticky(m.addAction("Copy curl example", self.copy_curl))
+        self._web = m.addAction(emoji_icon("🌐"), "Open web UI", self.open_web_ui)
+        self._copy_id = _sticky(m.addAction(emoji_icon("🏷️"), "Copy model id", self.copy_model_id))
+        self._copy_curl = _sticky(m.addAction(emoji_icon("📋"), "Copy curl example", self.copy_curl))
         m.addSeparator()
         log = self.c.manager.server_log
-        self._log = m.addAction("Open server log", lambda: open_path(log))
-        self._prev_log = m.addAction("Open previous server log", lambda: open_path(prev_path(log)))
-        m.addAction("Open logs folder", lambda: open_path(paths.logs_dir()))
+        self._log = m.addAction(emoji_icon("📄"), "Open server log", lambda: open_path(log))
+        self._prev_log = m.addAction(emoji_icon("📜"), "Open previous server log", lambda: open_path(prev_path(log)))
+        m.addAction(emoji_icon("📂"), "Open logs folder", lambda: open_path(paths.logs_dir()))
         m.addSeparator()
-        m.addAction("Settings...", self.open_settings)
-        m.addAction("Quit", self.quit_app)
+        m.addAction(emoji_icon("⚙️"), "Settings...", self.open_settings)
+        m.addAction(emoji_icon("🚪"), "Quit", self.quit_app)
         self.refresh()
 
     # ---- live state ----
@@ -297,6 +329,7 @@ class Tray(QObject):
         first, second = status_lines(st)
         self._marquees[0].set_text(first)
         self._marquees[1].set_text(second or f"port {self.c.settings.port}")  # never empty: constant height
+        self.header.set_state(st.state)
         self._fit_header()
         running = self.c.running_key()
         suffix = {State.STARTING: "  (starting...)", State.SLEEPING: "  (sleeping)"}.get(st.state, "")

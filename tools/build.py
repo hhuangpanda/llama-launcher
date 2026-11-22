@@ -87,6 +87,19 @@ def quit_if_confirmed() -> bool:
     return True
 
 
+def make_icon() -> Path:
+    sys.path.insert(0, str(ROOT))
+    from PySide6.QtGui import QGuiApplication
+
+    from llama_launcher.ui.icons import write_ico
+
+    _app = QGuiApplication.instance() or QGuiApplication([])  # QPixmap needs one
+    path = ROOT / "build" / "llama-launcher.ico"
+    path.parent.mkdir(exist_ok=True)
+    write_ico(path)
+    return path
+
+
 def main() -> int:
     running = running_from(DIST)
     if running:
@@ -96,7 +109,7 @@ def main() -> int:
             print("Quit it from the tray menu, then build again.", file=sys.stderr)
             return 1
     argv = [sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "--windowed", "--onedir"]
-    for flag, value in OPTIONS.items():
+    for flag, value in {**OPTIONS, "--icon": str(make_icon())}.items():
         argv += [flag, value]
     argv.append(str(ROOT / "tools" / "entry.py"))
     subprocess.run(argv, check=True)
