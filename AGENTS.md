@@ -16,6 +16,8 @@ Test-case IDs used in test names and comments (A1, P7, U3...) are in `docs/test-
   (config in `pyproject.toml`);
   run both before committing.
 - Build: `.venv\Scripts\python.exe tools\build.py` -> `dist\llama-launcher\`.
+- README logo and screenshots: `.venv\Scripts\python.exe tools\screenshots.py` -> `docs\images\`
+  (placeholder models; aborts if a local path is visible).
 - Imports are absolute (`from llama_launcher.x import y`).
 
 ## Layout

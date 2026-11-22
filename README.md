@@ -1,4 +1,4 @@
-# llama-launcher
+# <img src="docs/images/logo.png" alt="" width="36" align="top"> llama-launcher
 
 Windows tray app that runs local GGUF models through llama-server, one at a time,
 with per-model launch profiles and your own llama.cpp builds.
@@ -23,6 +23,13 @@ py -3.13 -m venv .venv
 
 Settings, profiles and logs live in `%LOCALAPPDATA%\llama-launcher\`
 (override with `LLAMA_LAUNCHER_HOME`).
+
+## Screenshots
+
+<p>
+  <a href="docs/images/tray-menu.png"><img src="docs/images/tray-menu.png" alt="Tray menu with a running model and its profiles" width="49%"></a>
+  <a href="docs/images/settings-profiles.png"><img src="docs/images/settings-profiles.png" alt="Settings: editing a profile, with the resulting command line" width="49%"></a>
+</p>
 
 ## Concepts
 
