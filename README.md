@@ -1,4 +1,4 @@
-# llama-launcher <img src="docs/images/logo.png" alt="" width="40" align="right">
+# llama-launcher <img src="https://raw.githubusercontent.com/hhuangpanda/llama-launcher/main/docs/images/logo.png" alt="" width="40" align="right">
 
 Windows tray app that runs local GGUF models through llama-server, one at a time,
 with per-model launch profiles and your own llama.cpp builds.
@@ -27,8 +27,8 @@ Settings, profiles and logs live in `%LOCALAPPDATA%\llama-launcher\`
 ## Screenshots
 
 <p>
-  <a href="docs/images/tray-menu.png"><img src="docs/images/tray-menu.png" alt="Tray menu with a running model and its profiles" width="49%"></a>
-  <a href="docs/images/settings-profiles.png"><img src="docs/images/settings-profiles.png" alt="Settings: editing a profile, with the resulting command line" width="49%"></a>
+  <a href="https://raw.githubusercontent.com/hhuangpanda/llama-launcher/main/docs/images/tray-menu.png"><img src="https://raw.githubusercontent.com/hhuangpanda/llama-launcher/main/docs/images/tray-menu.png" alt="Tray menu with a running model and its profiles" width="49%"></a>
+  <a href="https://raw.githubusercontent.com/hhuangpanda/llama-launcher/main/docs/images/settings-profiles.png"><img src="https://raw.githubusercontent.com/hhuangpanda/llama-launcher/main/docs/images/settings-profiles.png" alt="Settings: editing a profile, with the resulting command line" width="49%"></a>
 </p>
 
 ## Concepts
@@ -93,8 +93,8 @@ where `command` is the full llama-server command line (exe first), as a list or 
 set `LLAMA_LAUNCHER_TEST_MODELS` (a model folder)
 and `LLAMA_LAUNCHER_TEST_RUNTIMES` (llama-server folders, `;`-separated) first,
 in the environment or in a git-ignored `.env` (copy `.env.example`).
-Test IDs are listed in [docs/test-cases.md](docs/test-cases.md).
+Test IDs are listed in [docs/test-cases.md](https://github.com/hhuangpanda/llama-launcher/blob/main/docs/test-cases.md).
 
 ## License
 
-MIT, see [LICENSE](LICENSE).
+MIT, see [LICENSE](https://github.com/hhuangpanda/llama-launcher/blob/main/LICENSE).
