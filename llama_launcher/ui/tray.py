@@ -25,6 +25,7 @@ from llama_launcher.launch import ModelRow, ProfileKey, ctx_label, stem
 from llama_launcher.logs import prev_path
 from llama_launcher.server import State, Status
 from llama_launcher.ui.icons import dot_icon, emoji_icon, state_icon
+from llama_launcher.ui.log_view import show_log
 from llama_launcher.ui.marquee import Marquee
 from llama_launcher.ui.widgets import open_path
 
@@ -289,9 +290,13 @@ class Tray(QObject):
         self._copy_curl = _sticky(m.addAction(emoji_icon("📋"), "Copy curl example", self.copy_curl))
         m.addSeparator()
         log = self.c.manager.server_log
-        self._log = m.addAction(emoji_icon("📄"), "Open server log", lambda: open_path(log))
-        self._prev_log = m.addAction(emoji_icon("📜"), "Open previous server log", lambda: open_path(prev_path(log)))
-        m.addAction(emoji_icon("📂"), "Open logs folder", lambda: open_path(paths.logs_dir()))
+        logs = StickyMenu("Logs", m)
+        logs.setIcon(emoji_icon("🗂️"))
+        m.addMenu(logs)
+        logs.addAction(emoji_icon("👁️"), "View server log (live)", lambda: show_log(log))
+        self._log = logs.addAction(emoji_icon("📄"), "Open server log", lambda: open_path(log))
+        self._prev_log = logs.addAction(emoji_icon("📜"), "Open previous server log", lambda: open_path(prev_path(log)))
+        logs.addAction(emoji_icon("📂"), "Open logs folder", lambda: open_path(paths.logs_dir()))
         m.addSeparator()
         m.addAction(emoji_icon("⚙️"), "Settings...", self.open_settings)
         m.addAction(emoji_icon("🚪"), "Quit", self.quit_app)

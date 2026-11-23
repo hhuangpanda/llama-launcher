@@ -378,11 +378,11 @@ def test_status_line_shows_running_context(env, qtbot):
     app.tray.rebuild()
     c.start(ProfileKey(swift.lower(), "swift-orca"))
     lines = app.tray.header_lines
-    qtbot.waitUntil(lambda: lines()[0].startswith("Running") and lines()[1].startswith("100k context"), timeout=10000)
-    assert lines() == (
+    want = (
         "Running (idle) Qwen3.8-27B-Swift-1.5-ajgazin-Orca-MTP-RCO-IQ3_XXS / swift-orca",
         "100k context, b11860 (df9beac71)",
     )
+    qtbot.waitUntil(lambda: lines() == want, timeout=10000)
 
 
 def test_long_header_uses_full_width_and_scrolls_at_constant_size(env, qtbot):
@@ -456,7 +456,17 @@ def test_live_log_viewer(env, qtbot):
     log = c.manager.server_log
     log.parent.mkdir(parents=True, exist_ok=True)
     log.write_text("# header\n", encoding="utf-8")
-    v = log_view.show_log(log)
+    app.tray.rebuild()
+    logs = next(a.menu() for a in app.tray.menu.actions() if a.text() == "Logs")
+    assert [a.text() for a in logs.actions()] == [
+        "View server log (live)",
+        "Open server log",
+        "Open previous server log",
+        "Open logs folder",
+    ]
+    assert all(not a.icon().isNull() for a in logs.actions())
+    logs.actions()[0].trigger()
+    v = log_view._open[log]
     assert log_view.show_log(log) is v
     v.timer.setInterval(20)
     with open(log, "a", encoding="utf-8") as f:

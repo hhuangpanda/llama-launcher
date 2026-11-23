@@ -134,7 +134,7 @@ GGUF fixtures are tiny header-only files written by a test helper.
 | U10 | second app instance | exits immediately, first instance opens Settings |
 | U11 | `llama-launcher --quit` (quit message) | running instance quits the same way as the tray's Quit; Settings not opened |
 | U12 | app start / tray menu | a brief card near the tray says it's running, a click opens the menu; menu items have icons |
-| U13 | View server log | one window per file, follows appended lines, freed on close |
+| U13 | View server log (Settings or tray Logs submenu) | one window per file, follows appended lines, freed on close |
 
 ### Real (opt-in, `pytest -m real`)
 
