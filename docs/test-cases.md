@@ -59,6 +59,7 @@ GGUF fixtures are tiny header-only files written by a test helper.
 | A12 | one-shot ctx 32k | applies to that start only; config file unchanged |
 | A13 | mmproj/draft fields | `--mmproj`/`-md` rendered once; raw `--mmproj` in args wins and warns |
 | A14 | profile imported from a command line | rebuilds the same flags as the command (minus host/port/order) |
+| A15 | runtime build before / from b10519 | `--metrics` added only from b10519, where `/metrics` neither wakes nor resets the idle timer |
 
 ### Runtimes (unit + real)
 
@@ -88,6 +89,7 @@ GGUF fixtures are tiny header-only files written by a test helper.
 | P13 | API key enabled | child env has `LLAMA_API_KEY`; argv and log don't contain it |
 | P14 | listen 0.0.0.0 | `--host 0.0.0.0`; Open web UI still uses 127.0.0.1 |
 | P15 | start while the port watcher is mid-check | own server not reported as another program (`EXTERNAL`) |
+| P16 | runtime has `--metrics` (b10519+), request in flight vs none | status busy, then idle; header says "Running (idle)" when idle |
 
 ### Command-line import (unit)
 
@@ -114,6 +116,7 @@ GGUF fixtures are tiny header-only files written by a test helper.
 | L4 | third start | oldest run gone; only `server.log` and `server.prev.log` exist |
 | L5 | app relaunch | `app.log` moved to `app.prev.log`, new `app.log` started |
 | L6 | `server.prev.log` locked (open in an editor) | start still proceeds, rotation skipped and noted in `app.log` |
+| L7 | log tail: append, partial line, file replaced, large burst | only whole new lines; replaced or burst starts over from the last bytes |
 
 ### UI (pytest-qt)
 
@@ -131,6 +134,7 @@ GGUF fixtures are tiny header-only files written by a test helper.
 | U10 | second app instance | exits immediately, first instance opens Settings |
 | U11 | `llama-launcher --quit` (quit message) | running instance quits the same way as the tray's Quit; Settings not opened |
 | U12 | app start / tray menu | a brief card near the tray says it's running, a click opens the menu; menu items have icons |
+| U13 | View server log | one window per file, follows appended lines, freed on close |
 
 ### Real (opt-in, `pytest -m real`)
 

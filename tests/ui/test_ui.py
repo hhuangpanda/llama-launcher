@@ -380,7 +380,7 @@ def test_status_line_shows_running_context(env, qtbot):
     lines = app.tray.header_lines
     qtbot.waitUntil(lambda: lines()[0].startswith("Running") and lines()[1].startswith("100k context"), timeout=10000)
     assert lines() == (
-        "Running Qwen3.8-27B-Swift-1.5-ajgazin-Orca-MTP-RCO-IQ3_XXS / swift-orca",
+        "Running (idle) Qwen3.8-27B-Swift-1.5-ajgazin-Orca-MTP-RCO-IQ3_XXS / swift-orca",
         "100k context, b11860 (df9beac71)",
     )
 
@@ -389,8 +389,8 @@ def test_long_header_uses_full_width_and_scrolls_at_constant_size(env, qtbot):
     app, c, llm, swift = env
     app.tray.header_px = 200
     c.start(ProfileKey(swift.lower(), "swift-orca"))
-    qtbot.waitUntil(lambda: c.manager.status.state is State.RUNNING, timeout=10000)
-    full = "Running Qwen3.8-27B-Swift-1.5-ajgazin-Orca-MTP-RCO-IQ3_XXS / swift-orca"
+    qtbot.waitUntil(lambda: c.manager.status.busy is False, timeout=10000)
+    full = "Running (idle) Qwen3.8-27B-Swift-1.5-ajgazin-Orca-MTP-RCO-IQ3_XXS / swift-orca"
     menu = app.tray.menu
     menu.popup(menu.pos())
     qtbot.waitExposed(menu)
@@ -446,3 +446,21 @@ def test_started_toast_and_menu_icons(env, qtbot):
         qtbot.mouseClick(toast, Qt.LeftButton)
     qtbot.waitUntil(app.tray.menu.isVisible)
     app.tray.menu.hide()
+
+
+# U13
+def test_live_log_viewer(env, qtbot):
+    from llama_launcher.ui import log_view
+
+    app, c, _, _ = env
+    log = c.manager.server_log
+    log.parent.mkdir(parents=True, exist_ok=True)
+    log.write_text("# header\n", encoding="utf-8")
+    v = log_view.show_log(log)
+    assert log_view.show_log(log) is v
+    v.timer.setInterval(20)
+    with open(log, "a", encoding="utf-8") as f:
+        f.write("loading model\nserver is listening\n")
+    qtbot.waitUntil(lambda: "server is listening" in v.text.toPlainText(), timeout=3000)
+    v.close()
+    qtbot.waitUntil(lambda: log not in log_view._open, timeout=3000)

@@ -280,7 +280,7 @@ def status_lines(st: Status) -> tuple[str, str]:
         case State.STARTING:
             return f"Starting {title}", version
         case State.RUNNING:
-            return f"Running {title}", details
+            return (f"Running (idle) {title}" if st.busy is False else f"Running {title}"), details
         case State.SLEEPING:
             return f"Sleeping {title}", details
         case State.STOPPING:

@@ -1,7 +1,8 @@
 """Stand-in for llama-server in integration tests (stdlib only).
 
 Controls via env: FAKE_DELAY (seconds before /health is 200), FAKE_EXIT ("code:line" to print a line
-and exit before ready), FAKE_CRASH_AFTER (seconds after ready to exit 3)."""
+and exit before ready), FAKE_CRASH_AFTER (seconds after ready to exit 3),
+FAKE_BUSY_SECONDS (/metrics reports a request processing for this long after each POST)."""
 
 import json
 import os
@@ -74,6 +75,13 @@ def main():
                         "default_generation_settings": {"n_ctx": int(arg("--ctx-size", "4096"))},
                     },
                 )
+            if self.path == "/metrics" and "--metrics" in sys.argv:
+                busy = int(now - state["last"] < float(os.environ.get("FAKE_BUSY_SECONDS", "0")))
+                body = f"llamacpp:requests_processing {busy}\nllamacpp:requests_deferred 0\n".encode()
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                return self.wfile.write(body)
             if self.path == "/v1/models":
                 return self._send(200, {"data": [{"id": arg("--alias", arg("--model"))}]})
             self._send(404, {})

@@ -52,3 +52,22 @@ def test_app_log_rotates(tmp_path):
     assert "first session" not in (d / "app.prev.log").read_text()
     for h in logging.getLogger("llama_launcher").handlers:
         h.close()
+
+
+# L7
+def test_log_tail(tmp_path):
+    p = tmp_path / "server.log"
+    t = logs.LogTail(p, initial_bytes=20)
+    assert t.read() == (False, "")
+    p.write_bytes(b"x" * 30 + b"\nfirst\npart")
+    assert t.read() == (True, "first\n")
+    with open(p, "ab") as f:
+        f.write(b"ial\r\nnext\n")
+    assert t.read() == (False, "partial\nnext\n")
+    assert t.read() == (False, "")
+    p.with_name("new.log").write_bytes(b"new run\n")
+    logs.replace_file(p.with_name("new.log"), p)
+    assert t.read() == (True, "new run\n")
+    with open(p, "ab") as f:
+        f.write(b"y" * 50 + b"\nlast\n")
+    assert t.read() == (True, "last\n")

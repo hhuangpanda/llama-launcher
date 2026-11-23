@@ -6,6 +6,7 @@ from PySide6.QtWidgets import QCheckBox, QComboBox, QFormLayout, QHBoxLayout, QL
 
 from llama_launcher import paths
 from llama_launcher.launch import listen_hosts
+from llama_launcher.ui.log_view import show_log
 from llama_launcher.ui.tabs.base import SettingsTab
 from llama_launcher.ui.widgets import open_path, tailscale_ipv4
 
@@ -36,6 +37,13 @@ class GeneralTab(SettingsTab):
         row.addWidget(logs_btn)
         row.addStretch()
         f.addRow("", row)
+        live_btn = QPushButton("View server log")
+        live_btn.setToolTip("Live view of the current llama-server output; uses no memory while closed")
+        live_btn.clicked.connect(lambda: show_log(self.c.manager.server_log))
+        live_row = QHBoxLayout()
+        live_row.addWidget(live_btn)
+        live_row.addStretch()
+        f.addRow("", live_row)
         self.port.valueChanged.connect(lambda v: self._set("port", v))
         self.listen.currentTextChanged.connect(self._listen_changed)
         self.api_key.textChanged.connect(lambda v: self._set("api_key", v.strip()))

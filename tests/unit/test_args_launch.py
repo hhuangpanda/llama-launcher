@@ -4,7 +4,7 @@ import pytest
 from llama_launcher import args, launch
 from llama_launcher import catalog as c
 from llama_launcher.config import GlobalOptions, ModelEntry, Profile, Settings
-from llama_launcher.runtimes import Runtime
+from llama_launcher.runtimes import Runtime, VersionInfo
 
 
 def build(help, glob_args="", prof=None, model=None, settings=None, **kw):
@@ -234,3 +234,10 @@ def test_model_rows_merge_configured_and_scanned(llm):
     gemma = rows["gemma-4-12B-it-qat-UD-Q4_K_XL"]
     assert gemma.implicit and gemma.model.draft and gemma.model.profiles[0].args == "--spec-type draft-mtp"
     assert rows["Qwen3.6-35B-A3B-UD-Q4_K_M"].model.profiles[0].args == ""
+
+
+# A15
+@pytest.mark.parametrize("build_no,expect", [(None, False), (10518, False), (10519, True)])
+def test_metrics_flag_needs_sleep_safe_build(release_help, build_no, expect):
+    v = VersionInfo("x", build_no, "")
+    assert ("--metrics" in build(release_help, version=v).argv) is expect

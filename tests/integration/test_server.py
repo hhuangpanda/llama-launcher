@@ -245,6 +245,24 @@ def test_sleep_mode_tracks_sleep_and_wake(mgr, tmp_path):
     assert wait_for(lambda: mgr.status.state is State.RUNNING, 5)
 
 
+# P16
+def test_tracks_busy_and_idle(mgr, tmp_path):
+    s = spec(tmp_path, env={"FAKE_BUSY_SECONDS": "1"})
+    assert "--metrics" in s.argv
+    mgr.start(s)
+    assert running(mgr) and wait_for(lambda: mgr.status.busy is False, 5)
+    _chat(s)
+    assert wait_for(lambda: mgr.status.busy is True, 5)
+    assert wait_for(lambda: mgr.status.busy is False, 5)
+
+
+def test_busy_from_metrics():
+    text = "# TYPE llamacpp:requests_processing gauge\nllamacpp:requests_processing 0\nllamacpp:requests_deferred 1\n"
+    assert server.busy_from_metrics(text) is True
+    assert server.busy_from_metrics(text.replace("deferred 1", "deferred 0")) is False
+    assert server.busy_from_metrics("") is None
+
+
 # P12
 def test_quit_while_starting(mgr, tmp_path):
     mgr.start(spec(tmp_path, env={"FAKE_DELAY": "30"}))

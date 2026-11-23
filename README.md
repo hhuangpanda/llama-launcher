@@ -53,6 +53,8 @@ Settings, profiles and logs live in `%LOCALAPPDATA%\llama-launcher\`
 - **Idle**: `sleep` passes `--sleep-idle-seconds` (VRAM freed, next request reloads),
   `stop` ends the process once llama-server reports it is asleep,
   `off` keeps the model loaded.
+  On b10519 and later the app also passes `--metrics`,
+  so the tray can show "Running (idle)" when no request is in progress.
 
 ## Files
 
@@ -60,6 +62,7 @@ Settings, profiles and logs live in `%LOCALAPPDATA%\llama-launcher\`
 the app reloads them on change and keeps the last good version if an edit doesn't parse.
 Logs: `logs\server.log` (current or last server run, with the full command line)
 and `server.prev.log`, `app.log` and `app.prev.log`.
+Settings > General > View server log shows `server.log` live while the window is open.
 
 ## Importing existing launch commands
 

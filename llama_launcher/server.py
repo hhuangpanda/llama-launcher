@@ -21,6 +21,7 @@ from llama_launcher.args import format_argv
 from llama_launcher.config import IdleMode
 from llama_launcher.launch import LaunchSpec, Level, connect_host, listen_hosts
 from llama_launcher.logs import rotate
+from llama_launcher.server_flags import METRICS
 from llama_launcher.winjob import job
 
 log = logging.getLogger("llama_launcher.server")
@@ -45,6 +46,7 @@ class Status:
     log_path: str = ""
     external_ids: list[str] = field(default_factory=list)
     n_ctx: int | None = None  # context per request, as the running server reports it
+    busy: bool | None = None  # None: unknown (server started without --metrics)
 
     @property
     def active(self) -> bool:
@@ -57,6 +59,27 @@ def http_json(url: str, key: str = "", timeout: float = 2.0):
         req.add_header("Authorization", f"Bearer {key}")
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return r.status, json.loads(r.read() or b"null")
+
+
+def busy_from_metrics(text: str) -> bool | None:
+    """True while llama-server is processing or queueing a request, from its Prometheus text."""
+    n = None
+    for line in text.splitlines():
+        name, _, value = line.partition(" ")
+        if name in ("llamacpp:requests_processing", "llamacpp:requests_deferred"):
+            try:
+                n = (n or 0) + float(value)
+            except ValueError:
+                pass
+    return None if n is None else n > 0
+
+
+def http_text(url: str, key: str = "", timeout: float = 2.0) -> str:
+    req = urllib.request.Request(url)
+    if key:
+        req.add_header("Authorization", f"Bearer {key}")
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return r.read().decode("utf-8", "replace")
 
 
 def port_in_use(listen: str, port: int) -> bool:
@@ -195,6 +218,7 @@ class ServerManager:
             log_path=str(self.server_log),
             external_ids=[],
             n_ctx=None,
+            busy=None,
         )
         try:
             with open(self.server_log, "ab") as fh:
@@ -258,6 +282,7 @@ class ServerManager:
 
     def _monitor(self, gen: int, spec: LaunchSpec, proc: subprocess.Popen) -> None:
         key = spec.env.get("LLAMA_API_KEY", "")
+        metrics = METRICS in spec.argv
         next_props = 0.0
         while gen == self._gen:
             if proc.poll() is not None:
@@ -285,6 +310,13 @@ class ServerManager:
                     want = State.SLEEPING if sleeping else State.RUNNING
                     if self.status.state != want:
                         self._set(gen, state=want)
+            if metrics and self.status.state is State.RUNNING:
+                try:
+                    busy = busy_from_metrics(http_text(f"{spec.base_url}/metrics", key))
+                except (OSError, ValueError):
+                    busy = None
+                if busy != self.status.busy:
+                    self._set(gen, busy=busy)
             time.sleep(self.poll)
 
     # ---- stop ----

@@ -20,6 +20,8 @@ from llama_launcher.server_flags import (
     DRAFT_MODEL,
     DRAFT_MTP,
     HOST,
+    METRICS,
+    METRICS_MIN_BUILD,
     MMPROJ,
     MODEL,
     PORT,
@@ -237,6 +239,8 @@ def build(
         m.remove(SLEEP_IDLE_SECONDS)
     else:
         m.add([Flag(SLEEP_IDLE_SECONDS, str(idle_seconds), "idle")])
+    if version and (version.build or 0) >= METRICS_MIN_BUILD:
+        m.add([Flag(METRICS, None, "status")])  # the tray reads /metrics to tell running from idle
     # 6 profile raw
     prof_flags = _raw_flags(profile.args, "profile args", help_table, runtime, diags)
     sidecars = {help_table.canonical(flag): attr for attr, flag in SIDECAR_FLAGS.items()}
