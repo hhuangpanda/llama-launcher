@@ -20,6 +20,12 @@ Test-case IDs used in test names and comments (A1, P7, U3...) are in `docs/test-
   (placeholder models; aborts if a local path is visible).
 - Imports are absolute (`from llama_launcher.x import y`).
 
+## Releasing (only when asked)
+
+Bump `pyproject.toml` version, push `main`, then push tag `v<version>`:
+`publish.yml` publishes to PyPI and attaches the Windows zip.
+Add notes with `gh release edit`.
+
 ## Layout
 
 | module | role |

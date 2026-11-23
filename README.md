@@ -3,9 +3,19 @@
 Windows tray app that runs local GGUF models through llama-server, one at a time,
 with per-model launch profiles and your own llama.cpp builds.
 
+## Install
+
+Download `llama-launcher-<version>-win64.zip` from [Releases](https://github.com/hhuangpanda/llama-launcher/releases),
+extract it to a folder that will stay put (e.g. `%LOCALAPPDATA%\Programs\llama-launcher`)
+and run `llama-launcher.exe`.
+To update, quit the app and replace the folder; settings are kept elsewhere.
+The exe isn't code-signed, so Windows SmartScreen asks once: More info > Run anyway.
+
+Or with pip: `pip install llama-launcher`, then run `llama-launcher`.
+
 ## Requirements
 
-- Windows 10 or later, Python 3.13 (to run from source).
+- Windows 10 or later; Python 3.13 only for pip or running from source.
 - A llama.cpp `llama-server` build (a release zip or your own); the app does not ship one.
 - GGUF models.
 
