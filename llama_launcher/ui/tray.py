@@ -223,6 +223,7 @@ class Tray(QObject):
         self.icon.setContextMenu(self.menu)
         self.icon.activated.connect(self._activated)
         self.icon.messageClicked.connect(lambda: open_path(self.c.manager.server_log))
+        self._prev: Status | None = None
         self.c.status_changed.connect(self.on_status)
         self.c.config_changed.connect(self._config_changed)
         self.c.config_error.connect(lambda e: self.notify("Config error (last good config kept)", e, error=True))
@@ -254,9 +255,20 @@ class Tray(QObject):
         self.icon.setToolTip("\n".join(["llama-launcher", *lines, f"port {self.c.settings.port}"])[:127])
         if st.state is State.FAILED:
             self.notify("Model failed to start", st.message.splitlines()[0] if st.message else "", error=True)
-        elif st.state is State.EXTERNAL and self.c.last_key is not None:
+        elif st.state is State.EXTERNAL and self.c.last_key is not None and not self._ids_only_change(st):
             self.notify("Port in use", st.message)
+        self._prev = st
         self.refresh()
+
+    def _ids_only_change(self, st: Status) -> bool:
+        # The port watch re-reports EXTERNAL when the other server's model list changes (e.g. once it finishes loading).
+        p = self._prev
+        return (
+            p is not None
+            and p.state is State.EXTERNAL
+            and p.message == st.message
+            and p.external_ids != st.external_ids
+        )
 
     # ---- building ----
     def rebuild(self) -> None:

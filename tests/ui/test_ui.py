@@ -18,7 +18,7 @@ from llama_launcher.config import Config, GlobalOptions, ModelEntry, Profile, Ru
 from llama_launcher.controller import Controller
 from llama_launcher.launch import ProfileKey
 from llama_launcher.runtimes import Runtime
-from llama_launcher.server import ServerManager, State
+from llama_launcher.server import ServerManager, State, Status
 from llama_launcher.single_instance import QUIT, SHOW_SETTINGS
 
 TEST_RUN_KEY = r"Software\llama-launcher-test\Run"
@@ -474,3 +474,21 @@ def test_live_log_viewer(env, qtbot):
     qtbot.waitUntil(lambda: "server is listening" in v.text.toPlainText(), timeout=3000)
     v.close()
     qtbot.waitUntil(lambda: log not in log_view._open, timeout=3000)
+
+
+def test_port_in_use_notifies_once_per_takeover(env, monkeypatch):
+    app, c, *_ = env
+    shown = []
+    monkeypatch.setattr(app.tray, "notify", lambda title, text, error=False: shown.append(title))
+    c.last_key = object()
+    watch = "port 1 is in use by another program"
+    app.tray.on_status(Status(State.EXTERNAL, message=watch))
+    app.tray.on_status(Status(State.EXTERNAL, message=watch, external_ids=["m"]))  # other server finished loading
+    assert shown == ["Port in use"]
+    click = "port 1 is already in use by another program"
+    app.tray.on_status(Status(State.EXTERNAL, message=click, external_ids=["m"]))
+    app.tray.on_status(Status(State.EXTERNAL, message=click, external_ids=["m"]))
+    assert shown == ["Port in use"] * 3
+    app.tray.on_status(Status())
+    app.tray.on_status(Status(State.EXTERNAL, message=watch))
+    assert len(shown) == 4
