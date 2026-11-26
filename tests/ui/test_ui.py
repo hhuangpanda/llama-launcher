@@ -127,6 +127,7 @@ def test_tray_menu_from_config(env):
     assert swift_menu["profile:mtp"].text() == "Start mtp (up to 256k)"
     assert swift_menu["profile:swift-orca"].text() == "Start swift-orca (100k)"
     assert swift_menu["Profile default"].isChecked() and "128k" in swift_menu
+    assert "256k" in swift_menu and "384k" not in swift_menu and "4k" not in swift_menu  # trained ctx 256k
     single = menu["Qwen3.6-35B-A3B-UD-Q4_K_M"]
     assert "profile:default_profile" in single and "Profile default (up to 256k)" in single
     assert not menu["Stop"].isEnabled() and not menu["Restart to apply changes"].isVisible()

@@ -17,7 +17,7 @@ from llama_launcher.server import ServerManager, State, Status
 
 log = logging.getLogger("llama_launcher.controller")
 
-CONTEXT_CHOICES = (4096, 8192, 16384, 32768, 65536, 131072, 262144)
+CONTEXT_CHOICES = (8192, 16384, 32768, 65536, 131072, 196608, 262144, 393216, 524288)
 
 
 class CtxSource(StrEnum):
@@ -180,11 +180,20 @@ class Controller(QObject):
         g = launch.global_ctx(self.settings.global_.args)
         if g:
             return g, CtxSource.GLOBAL
-        try:
-            n = self.info_cache.get(model.file).context_length or 0
-        except Exception:
-            n = 0
+        n = self.model_ctx(model)
         return n, CtxSource.MODEL if n else CtxSource.NONE
+
+    def model_ctx(self, model: ModelEntry) -> int:
+        """The model's trained context, 0 if unknown."""
+        try:
+            return self.info_cache.get(model.file).context_length or 0
+        except Exception:
+            return 0
+
+    def ctx_choices(self, model: ModelEntry) -> tuple[int, ...]:
+        """Tray context choices up to the model's trained context (all of them if unknown)."""
+        n = self.model_ctx(model)
+        return tuple(c for c in CONTEXT_CHOICES if not n or c <= n)
 
     def start(self, key: ProfileKey) -> LaunchSpec | None:
         found = self.find(key)

@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 
 from llama_launcher import paths
 from llama_launcher.config import Profile
-from llama_launcher.controller import CONTEXT_CHOICES, Controller, CtxSource, status_lines
+from llama_launcher.controller import Controller, CtxSource, status_lines
 from llama_launcher.launch import ModelRow, ProfileKey, ctx_label, stem
 from llama_launcher.logs import prev_path
 from llama_launcher.server import State, Status
@@ -143,7 +143,7 @@ class ModelMenu:
         self.menu.addAction("Context for the next start").setEnabled(False)
         group = QActionGroup(self.menu)
         self._ctx: dict[int | None, QAction] = {}
-        for value in (None, *CONTEXT_CHOICES):
+        for value in (None, *controller.ctx_choices(row.model)):
             a = _sticky(self.menu.addAction(self._default_ctx_text() if value is None else ctx_label(value)))
             a.setCheckable(True)
             group.addAction(a)
