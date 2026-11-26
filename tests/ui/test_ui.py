@@ -477,10 +477,9 @@ def test_live_log_viewer(env, qtbot):
 
 
 def test_port_in_use_notifies_once_per_takeover(env, monkeypatch):
-    app, c, *_ = env
+    app, *_ = env  # nothing launched from this app: servers started elsewhere still notify
     shown = []
     monkeypatch.setattr(app.tray, "notify", lambda title, text, error=False: shown.append(title))
-    c.last_key = object()
     watch = "port 1 is in use by another program"
     app.tray.on_status(Status(State.EXTERNAL, message=watch))
     app.tray.on_status(Status(State.EXTERNAL, message=watch, external_ids=["m"]))  # other server finished loading

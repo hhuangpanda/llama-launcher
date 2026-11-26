@@ -387,7 +387,7 @@ class ServerManager:
         elif self.status.state is State.EXTERNAL:
             self._set(gen, state=State.STOPPED, external_ids=[], message="")
 
-    def watch_port(self, target: Callable[[], tuple[str, int, str]], interval: float = 10.0) -> None:
+    def watch_port(self, target: Callable[[], tuple[str, int, str]], interval: float = 5.0) -> None:
         def loop():
             while not self._watch_stop.wait(interval):
                 try:

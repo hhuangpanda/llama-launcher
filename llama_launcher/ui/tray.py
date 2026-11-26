@@ -255,7 +255,7 @@ class Tray(QObject):
         self.icon.setToolTip("\n".join(["llama-launcher", *lines, f"port {self.c.settings.port}"])[:127])
         if st.state is State.FAILED:
             self.notify("Model failed to start", st.message.splitlines()[0] if st.message else "", error=True)
-        elif st.state is State.EXTERNAL and self.c.last_key is not None and not self._ids_only_change(st):
+        elif st.state is State.EXTERNAL and not self._ids_only_change(st):
             self.notify("Port in use", st.message)
         self._prev = st
         self.refresh()
