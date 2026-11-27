@@ -120,7 +120,7 @@ def test_new_import(run):
     assert s.global_.args == "-t 12 --load-mode none --fit on --flash-attn on" and s.global_.cache_type_k == "q8_0"
     assert s.global_.cache_type_v == ""  # differs between commands -> stays per profile
     gemma = next(m for m in p.models if m.file.endswith("gemma-qat.gguf"))
-    assert gemma.mmproj.endswith("gemma-mmproj.gguf") and gemma.draft.endswith("mtp-gemma.gguf")
+    assert gemma.mmproj.endswith("gemma-mmproj.gguf") and gemma.profiles[0].draft.endswith("mtp-gemma.gguf")
     assert gemma.profiles[0].alias == "" and gemma.profiles[0].ctx_size == 131072
     q4 = next(m for m in p.models if m.file.endswith("qwen.gguf")).profile("qwen-kvq4")
     assert (q4.runtime, q4.cache_type_v, q4.alias) == ("build-cuda", "q4_0", "qwen-kvq4")
@@ -128,6 +128,16 @@ def test_new_import(run):
         "ignored --host, --port in the commands: llama-launcher sets these itself"
     ]
     assert "'{\"preserve_thinking\":true}'" in r["qwen-general"].profile.args
+
+
+def test_lora_goes_on_its_profile_only(run):
+    lora = rf"{M}\qwen-LoRA.gguf"
+    entries = [*ENTRIES[:2], {**ENTRIES[1], "name": "qwen-lora", "command": [*ENTRIES[1]["command"], "--lora", lora]}]
+    p = run(entries)
+    qwen = next(m for m in p.models if m.file.endswith("qwen.gguf"))
+    assert qwen.profile("qwen-lora").lora == lora and qwen.profile("qwen-general").lora == ""
+    assert "--lora" not in qwen.profile("qwen-lora").args and all(x.exact for x in p.results)
+    assert {x.status for x in run(entries, settings=p.settings, models=p.models).results} == {"unchanged"}
 
 
 def test_rerun_is_unchanged_and_adds_nothing(run):

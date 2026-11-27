@@ -1,3 +1,4 @@
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -106,6 +107,45 @@ def test_wrong_arch_draft_not_suggested(tmp_path):
     gb.draft(tmp_path / "mtp-gemma.gguf", "gemma4-assistant")
     entries = c.scan([str(tmp_path)])
     assert c.suggest(c.models(entries)[0], entries).draft_candidates == []
+
+
+# C10
+def test_dflash_draft_matched_by_tokenizer_and_width(tmp_path):
+    for name, pre, n in (("ink.gguf", "inkling2", 2304), ("other.gguf", "inkling2", 4096), ("q.gguf", "qwen35", 2304)):
+        gb.write_gguf(
+            tmp_path / name,
+            {"general.architecture": "x", "x.embedding_length": n, "tokenizer.ggml.pre": pre},
+        )
+    gb.dflash(tmp_path / "dspark-ink.gguf", "inkling2", 2304)
+    entries = c.scan([str(tmp_path)])
+    sug = {Path(m.path).name: c.suggest(m, entries) for m in c.models(entries)}
+    assert [Path(p).name for p in sug["ink.gguf"].draft_candidates] == ["dspark-ink.gguf"]
+    assert sug["ink.gguf"].draft.endswith("dspark-ink.gguf") and sug["ink.gguf"].draft_spec == ""  # auto
+    assert sug["other.gguf"].draft_candidates == sug["q.gguf"].draft_candidates == []
+
+
+def test_cache_rereads_entries_missing_new_fields(tmp_path):
+    p = gb.dflash(tmp_path / "d.gguf", "inkling2", 2304)
+    cache = c.InfoCache(tmp_path / "cache.json")
+    cache.get(str(p))
+    cache.save()
+    data = json.loads((tmp_path / "cache.json").read_text())
+    for v in data.values():
+        del v["info"]["tokenizer_pre"]
+    (tmp_path / "cache.json").write_text(json.dumps(data))
+    assert c.InfoCache(tmp_path / "cache.json").get(str(p)).tokenizer_pre == "inkling2"
+
+
+# C9
+def test_lora_offered_by_arch_never_attached(tmp_path):
+    gb.model(tmp_path / "g.gguf", "gemma4", 3840)
+    gb.model(tmp_path / "q.gguf", "qwen35", 5120)
+    gb.lora(tmp_path / "g-lora.gguf", "gemma4")
+    entries = c.scan([str(tmp_path)])
+    assert {e.kind for e in entries if e.path.endswith("g-lora.gguf")} == {c.Kind.LORA}
+    g, q = (next(m for m in c.models(entries) if m.path.endswith(n)) for n in ("g.gguf", "q.gguf"))
+    assert [Path(p).name for p in c.suggest(g, entries).lora_candidates] == ["g-lora.gguf"]
+    assert c.suggest(q, entries).lora_candidates == []
 
 
 # C5

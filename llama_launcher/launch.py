@@ -8,18 +8,23 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 from llama_launcher.args import ArgError, Flag, Merger, parse_text, reserved_in, tokenize
-from llama_launcher.catalog import FileEntry, Kind, Suggestion, draft_fits, mmproj_fits, suggest
+from llama_launcher.catalog import FileEntry, Kind, Suggestion, draft_fits, lora_fits, mmproj_fits, suggest
 from llama_launcher.config import DEFAULT_PROFILE, IdleMode, ModelEntry, Profile, Settings
 from llama_launcher.gguf import GGUFError, GGUFInfo
 from llama_launcher.paths import norm
 from llama_launcher.runtimes import EXE_NAME, HelpTable, Runtime, VersionInfo
 from llama_launcher.server_flags import (
     ALIAS,
+    AUTO_SPEC_MIN_BUILD,
     CACHE_FLAGS,
     CTX_SIZE,
+    DFLASH_FAMILY,
+    DRAFT_DFLASH,
     DRAFT_MODEL,
     DRAFT_MTP,
+    DRAFT_SIMPLE,
     HOST,
+    LORA,
     METRICS,
     METRICS_MIN_BUILD,
     MMPROJ,
@@ -29,6 +34,7 @@ from llama_launcher.server_flags import (
     RESERVED,
     SIDECAR_FLAGS,
     SLEEP_IDLE_SECONDS,
+    SPEC_AUTO,
     SPEC_TYPE,
 )
 
@@ -133,9 +139,10 @@ def stem(path: str) -> str:
 
 def implicit_model(entry: FileEntry, sug: Suggestion) -> ModelEntry:
     """A scanned model with no profiles.toml entry: one default profile with suggested sidecars."""
-    args = f"{SPEC_TYPE} {DRAFT_MTP}" if (sug.draft or sug.builtin_mtp) else ""
     return ModelEntry(
-        entry.path, mmproj=sug.mmproj or "", draft=sug.draft or "", profiles=[Profile(DEFAULT_PROFILE, args=args)]
+        entry.path,
+        mmproj=sug.mmproj or "",
+        profiles=[Profile(DEFAULT_PROFILE, draft=sug.draft or "", spec_type=sug.draft_spec)],
     )
 
 
@@ -213,6 +220,8 @@ def build(
     base_env: dict[str, str] | None = None,
 ) -> LaunchSpec:
     diags = Diagnostics()
+    for msg in (*model.invalid.values(), *profile.invalid.values()):
+        diags.error(f"{msg} (fix it in the file or set it here)")
     help_table = help_table or HelpTable()
     if runtime is None:
         diags.error(f"no llama.cpp runtime configured (profile runtime '{resolve_runtime_name(settings, profile)}')")
@@ -235,6 +244,10 @@ def build(
             m.remove(u)
     # 5 profile structured
     m.add(_field_flags(profile, PROFILE_FLAGS, "profile"))
+    if profile.spec_type == SPEC_AUTO:
+        m.remove(SPEC_TYPE)
+    elif profile.spec_type:
+        m.add([Flag(SPEC_TYPE, profile.spec_type, "profile")])
     if idle_mode == IdleMode.OFF:
         m.remove(SLEEP_IDLE_SECONDS)
     else:
@@ -244,10 +257,16 @@ def build(
     # 6 profile raw
     prof_flags = _raw_flags(profile.args, "profile args", help_table, runtime, diags)
     sidecars = {help_table.canonical(flag): attr for attr, flag in SIDECAR_FLAGS.items()}
+    files = {help_table.canonical(PROFILE_FLAGS[a]): a for a in ("draft", "lora")}
     for f in prof_flags:
         attr = sidecars.get(help_table.canonical(f.flag))
         if attr and getattr(model, attr):
             diags.warn(f"profile args {f.flag} overrides the model's {attr}")
+        attr = files.get(help_table.canonical(f.flag))
+        if attr and getattr(profile, attr):
+            diags.warn(f"profile args {f.flag} overrides the profile's {attr}")
+        if profile.spec_type and help_table.canonical(f.flag) == help_table.canonical(SPEC_TYPE):
+            diags.warn(f"profile args {f.flag} overrides the profile's speculative decoding setting")
     m.add(prof_flags)
     # 7 one-shot
     if ctx_override:
@@ -264,7 +283,7 @@ def build(
     if settings.api_key:
         env["LLAMA_API_KEY"] = settings.api_key
 
-    _validate_files(m, get_info, diags)
+    _validate_files(m, get_info, diags, version)
     if runtime is not None and (p := runtime.check()):
         diags.error(p)
 
@@ -284,13 +303,16 @@ def build(
     )
 
 
-def _validate_files(m: Merger, get_info: Callable[[str], GGUFInfo] | None, diags: Diagnostics) -> None:
+def _validate_files(
+    m: Merger, get_info: Callable[[str], GGUFInfo] | None, diags: Diagnostics, version: VersionInfo | None
+) -> None:
     def val(flag):
         f = m.get(flag)
         return f.value if f else None
 
     model_path, mmproj, draft = val(MODEL), val(MMPROJ), val(DRAFT_MODEL)
-    for label, p in (("model", model_path), ("mmproj", mmproj), ("draft", draft)):
+    loras = [p.strip() for p in (val(LORA) or "").split(",") if p.strip()]
+    for label, p in (("model", model_path), ("mmproj", mmproj), ("draft", draft), *(("lora", p) for p in loras)):
         if p and not os.path.isfile(p):
             diags.error(f"{label} file not found: {p}")
     if get_info is None or not model_path or not os.path.isfile(model_path):
@@ -314,13 +336,43 @@ def _validate_files(m: Merger, get_info: Callable[[str], GGUFInfo] | None, diags
     di = None
     if draft and os.path.isfile(draft) and (di := info(draft)) and not draft_fits(mi, di):
         diags.error(f"draft {os.path.basename(draft)} (arch {di.arch}) doesn't fit a {mi.arch} model")
-    spec_types = (val(SPEC_TYPE) or "").split(",")
-    if DRAFT_MTP in spec_types and not draft and mi.nextn_layers == 0:
-        diags.error("--spec-type draft-mtp needs a draft file or a model with built-in MTP; this model has neither")
-    if di is not None and di.arch.endswith("-assistant") and DRAFT_MTP not in spec_types:
-        diags.error(
-            f"draft {os.path.basename(draft)} is an MTP head: add --spec-type draft-mtp (llama-server crashes without it)"
-        )
+    for lp in loras:
+        if os.path.isfile(lp) and (li := info(lp)) and not lora_fits(mi, li):
+            diags.error(f"lora {os.path.basename(lp)} (arch {li.arch}) doesn't fit a {mi.arch} model")
+    _validate_spec(val(SPEC_TYPE), mi, draft, di, version, diags)
     ctx = val(CTX_SIZE)
     if ctx and ctx.isdigit() and mi.context_length and int(ctx) > mi.context_length:
         diags.warn(f"ctx-size {ctx} is larger than the model's trained context ({mi.context_length})")
+
+
+def _validate_spec(
+    value: str | None,
+    mi: GGUFInfo,
+    draft: str | None,
+    di: GGUFInfo | None,
+    version: VersionInfo | None,
+    diags: Diagnostics,
+) -> None:
+    types = [t for t in (value or "").split(",") if t and t != "none"]
+    name = os.path.basename(draft) if draft else ""
+    dflash = [t for t in types if t in DFLASH_FAMILY]
+    if len(dflash) > 1:
+        diags.error(f"--spec-type: {', '.join(dflash)} can't be combined")
+    if dflash and not (di and di.arch == "dflash"):
+        diags.error(f"--spec-type {dflash[0]} needs a DFlash draft" + (f"; {name} isn't one" if draft else ""))
+    if DRAFT_MTP in types:
+        if di is not None and di.arch == "dflash":
+            diags.error(f"draft {name} is a DFlash draft: use {DRAFT_DFLASH}, not {DRAFT_MTP}")
+        elif not draft and mi.nextn_layers == 0:
+            diags.error("--spec-type draft-mtp needs a draft file or a model with built-in MTP; this model has neither")
+    if DRAFT_SIMPLE in types and not draft:
+        diags.error(f"--spec-type {DRAFT_SIMPLE} needs a draft file")
+    if di is None:
+        return
+    if di.arch.endswith("-assistant") and DRAFT_MTP not in types:
+        diags.error(f"draft {name} is an MTP head: add --spec-type draft-mtp (llama-server crashes without it)")
+    elif di.arch == "dflash" and not any(t.startswith("draft-") for t in types):
+        if types:
+            diags.warn(f"draft {name} is loaded but unused: --spec-type {value} has no {DRAFT_DFLASH}")
+        elif version and version.build and version.build < AUTO_SPEC_MIN_BUILD:
+            diags.error(f"this llama-server (b{version.build}) doesn't pick a spec type itself: use {DRAFT_DFLASH}")

@@ -34,6 +34,7 @@ class Controller(QObject):
     status_changed = Signal(object)  # Status
     config_changed = Signal()
     config_error = Signal(str)
+    config_problems = Signal(list)  # keys and entries skipped by a successful load
 
     def __init__(
         self,
@@ -59,6 +60,7 @@ class Controller(QObject):
         except ConfigError as e:
             self.load_error = str(e)
             log.error("config: %s", e)
+        self._log_problems()
         self.rescan()
         self._watcher = None
         if watch:
@@ -94,10 +96,17 @@ class Controller(QObject):
             return False
         self.load_error = ""
         log.info("config reloaded")
+        self._log_problems()
         self.rescan()
         self._rewatch()
         self.config_changed.emit()
+        if self.config.problems:
+            self.config_problems.emit(list(self.config.problems))
         return True
+
+    def _log_problems(self) -> None:
+        for p in self.config.problems:
+            log.warning("config: %s", p)
 
     def save(self, settings: Settings, models: list[ModelEntry]) -> None:
         self.config.settings = settings

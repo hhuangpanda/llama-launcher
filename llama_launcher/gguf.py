@@ -27,6 +27,7 @@ class GGUFInfo:
     context_length: int | None
     nextn_layers: int
     projection_dims: tuple[int, ...]
+    tokenizer_pre: str = ""
 
 
 def _read(f, n: int) -> bytes:
@@ -102,6 +103,7 @@ def info_from_metadata(path: str, meta: dict) -> GGUFInfo:
         context_length=meta.get(f"{arch}.context_length"),
         nextn_layers=int(meta.get(f"{arch}.nextn_predict_layers") or 0),
         projection_dims=dims,
+        tokenizer_pre=str(meta.get("tokenizer.ggml.pre") or ""),
     )
 
 

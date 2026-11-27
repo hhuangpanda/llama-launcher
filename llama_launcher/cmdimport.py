@@ -20,8 +20,8 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 from llama_launcher import launch, paths
-from llama_launcher.args import ArgError, Flag, format_argv, parse, tokenize
-from llama_launcher.config import Config, IdleMode, ModelEntry, Profile, RuntimeEntry, Settings
+from llama_launcher.args import ArgError, Flag, format_argv, join_flags, parse, tokenize
+from llama_launcher.config import Config, ConfigError, IdleMode, ModelEntry, Profile, RuntimeEntry, Settings
 from llama_launcher.paths import norm
 from llama_launcher.runtimes import HelpTable, Runtime, RuntimeProbe
 from llama_launcher.server_flags import (
@@ -29,7 +29,9 @@ from llama_launcher.server_flags import (
     CACHE_FLAGS,
     CONNECTION,
     CTX_SIZE,
+    DRAFT_MODEL,
     FIELDS,
+    LORA,
     MANAGED,
     MODEL,
     SIDECAR_FLAGS,
@@ -122,16 +124,6 @@ def _canon(flags: list[Flag], help_table: HelpTable) -> dict[str, str | None]:
     return {help_table.canonical(f.flag): f.value for f in flags}
 
 
-def _quote(v: str) -> str:
-    if v and not any(c.isspace() or c in "'\"" for c in v):
-        return v
-    return f"'{v}'" if "'" not in v else '"' + v.replace('"', '\\"') + '"'
-
-
-def _join(flags: list[Flag]) -> str:
-    return " ".join(f.flag if f.value is None else f"{f.flag} {_quote(f.value)}" for f in flags)
-
-
 @dataclass
 class _Parsed:
     """One command whose flags parsed and that names a model."""
@@ -220,7 +212,7 @@ def _promote_shared(parsed: list[_Parsed], s: Settings) -> list[str]:
         missing = object()
         common = [f for key, f in candidates.items() if all(p.values.get(key, missing) == f.value for p in parsed[1:])]
         if common:
-            s.global_.args = _join(common)
+            s.global_.args = join_flags(common)
             changes.append(f"global args = {s.global_.args}")
     for attr, flag in CACHE_FLAGS.items():
         values = {p.get(flag) for p in parsed}
@@ -332,7 +324,9 @@ def _build_profile(p: _Parsed, s: Settings, rt: RuntimeEntry, extra: list[Flag])
             attr: "" if p.get(flag) in (None, getattr(s.global_, attr)) else p.get(flag)
             for attr, flag in CACHE_FLAGS.items()
         },
-        args=_join(rest),
+        draft="" if p.canonical(DRAFT_MODEL) in covered else (p.get(DRAFT_MODEL) or ""),
+        lora="" if p.canonical(LORA) in covered else (p.get(LORA) or ""),
+        args=join_flags(rest),
         unset=sorted(k for k in global_flags if k not in p.values),
         runtime="" if rt.name == s.default_runtime else rt.name,
     )
@@ -405,7 +399,13 @@ def main(argv=None) -> int:
         print(f"error: {e}", file=sys.stderr)
         return 2
     cfg = Config(paths.settings_file(), paths.profiles_file())
-    cfg.load()
+    try:
+        cfg.load()
+    except ConfigError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+    for problem in cfg.problems:
+        print(f"config: {problem}", file=sys.stderr)
     probe = RuntimeProbe()
 
     def help_for(exe: str) -> HelpTable:

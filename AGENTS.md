@@ -57,7 +57,7 @@ Add notes with `gh release edit`.
   the venv `python.exe` is a redirector whose real interpreter is a grandchild.
 - Fixture logs were captured from real runs; keep machine-specific paths out of them.
 
-## llama-server facts (verified on b11860 and b12198)
+## llama-server facts
 
 - No flag is repeatable; lists are comma-separated, so later-wins is always right.
 - `/props` has `is_sleeping`;

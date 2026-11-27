@@ -227,13 +227,21 @@ class Tray(QObject):
         self.c.status_changed.connect(self.on_status)
         self.c.config_changed.connect(self._config_changed)
         self.c.config_error.connect(lambda e: self.notify("Config error (last good config kept)", e, error=True))
+        self.c.config_problems.connect(self._notify_problems)
         self.rebuild()
         self.on_status(self.c.manager.status)
-        if self.c.load_error:
-            self.notify("Config error", self.c.load_error, error=True)
+
+    def _notify_problems(self, problems: list[str]) -> None:
+        more = len(problems) - 3
+        text = "\n".join(problems[:3]) + (f"\n...and {more} more in app.log" if more > 0 else "")
+        self.notify("Config: some entries ignored", text, error=True)
 
     def show(self) -> None:
         self.icon.show()
+        if self.c.load_error:
+            self.notify("Config error", self.c.load_error, error=True)
+        elif self.c.config.problems:
+            self._notify_problems(self.c.config.problems)
 
     def _activated(self, reason) -> None:
         if reason == QSystemTrayIcon.Trigger:

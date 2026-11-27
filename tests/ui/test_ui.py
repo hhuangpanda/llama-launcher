@@ -214,6 +214,53 @@ def test_profile_editor_preview_updates_live(env, qtbot):
     assert c.config.models[0].profiles[1].ctx_size == 65536
 
 
+# U14
+def test_speculative_row_offers_only_fitting_types(env):
+    app, c, llm, swift = env
+    w = app.open_settings()
+    tab, ed = w.profiles_tab, w.profiles_tab.editor
+    top = next(
+        tab.tree.topLevelItem(i)
+        for i in range(tab.tree.topLevelItemCount())
+        if tab.tree.topLevelItem(i).text(0).startswith("Qwen3.8-27B-Swift")
+    )
+    tab.tree.setCurrentItem(top.child(1))  # built-in MTP, --spec-type draft-mtp in args
+    opts = [ed.spec_draft.itemData(i) for i in range(ed.spec_draft.count())]
+    assert opts == ["off", "draft-mtp"] and ed.spec_draft.currentData() == "draft-mtp"
+    assert "profile's args" in ed.spec_hint.text()
+    ed.spec_ngram.setCurrentIndex(ed.spec_ngram.findData("ngram-mod"))
+    p = ed.profile
+    assert p.spec_type == "draft-mtp,ngram-mod" and p.args == "--spec-draft-n-max 2"
+    assert "--spec-type draft-mtp,ngram-mod" in ed.preview.toPlainText() and not ed.spec_hint.text()
+
+    ink = llm / "ink.gguf"
+    gb.write_gguf(ink, {"general.architecture": "x", "x.embedding_length": 2304, "tokenizer.ggml.pre": "ink"})
+    gb.dflash(llm / "dspark-ink.gguf", "ink", 2304)
+    w.folders_tab.rescan()
+    top = next(
+        tab.tree.topLevelItem(i)
+        for i in range(tab.tree.topLevelItemCount())
+        if tab.tree.topLevelItem(i).text(0) == "ink"
+    )
+    tab.tree.setCurrentItem(top.child(0))  # dflash draft auto-attached, no --spec-type anywhere but global
+    assert ed.spec_draft.currentData() == "auto"
+    opts = [ed.spec_draft.itemData(i) for i in range(ed.spec_draft.count())]
+    assert opts == ["auto", "draft-dflash"]
+    assert not ed._model_form.isRowVisible(ed.mtp_hint) and not ed._profile_form.isRowVisible(ed.spec_hint)
+    ed.spec_draft.setCurrentIndex(ed.spec_draft.findData("auto"))
+    ed.spec_ngram.setCurrentIndex(ed.spec_ngram.findData("ngram-mod"))
+    assert "--spec-type draft-dflash,ngram-mod" in ed.preview.toPlainText()  # auto can't coexist with n-gram
+    assert ed.spec_draft.currentData() == "draft-dflash"
+    ed.spec_ngram.setCurrentIndex(0)
+    ed.spec_draft.setCurrentIndex(ed.spec_draft.findData("auto"))
+    assert "--spec-type" not in ed.preview.toPlainText() and "✔" in ed.problems.text()
+
+    ed.spec_ngram.setCurrentIndex(ed.spec_ngram.findData("ngram-mod"))
+    ed.draft.combo.setCurrentIndex(0)  # draft removed: its type goes with it, n-gram stays
+    assert ed.profile.spec_type == "ngram-mod" and ed.spec_draft.currentData() == "off"
+    assert "--spec-type ngram-mod" in ed.preview.toPlainText() and "✔" in ed.problems.text()
+
+
 def test_editing_implicit_model_materializes_it(env):
     app, c, llm, swift = env
     w = app.open_settings()
@@ -228,7 +275,8 @@ def test_editing_implicit_model_materializes_it(env):
     w.save()
     c.config.load()
     gemma = c.config.model(str(llm / "gemma-4-12B-it-qat-UD-Q4_K_XL.gguf"))
-    assert gemma and gemma.draft.endswith("mtp-gemma-4-12B-it-Q4_0.gguf") and gemma.profiles[0].args.endswith("3")
+    assert gemma and gemma.profiles[0].draft.endswith("mtp-gemma-4-12B-it-Q4_0.gguf")
+    assert gemma.profiles[0].args.endswith("3")
 
 
 # U7: context is picked per model without starting; it applies on the next start
@@ -309,7 +357,12 @@ def test_hand_edit_reloads(env, qtbot):
     text = c.config.profiles_path.read_text().replace('name = "mtp"', 'name = "mtp2"')
     c.config.profiles_path.write_text(text)
     qtbot.waitUntil(lambda: c.config.models[0].profiles[1].name == "mtp2", timeout=5000)
-    c.config.profiles_path.write_text("[[models]]\n")
+    problems = []
+    c.config_problems.connect(problems.extend)
+    c.config.profiles_path.write_text(text + "\nfuture_key = 1\n")
+    qtbot.waitUntil(lambda: bool(problems), timeout=5000)
+    assert "unknown key 'future_key'" in problems[0] and c.config.models[0].profiles[1].name == "mtp2"
+    c.config.profiles_path.write_text("[[models]\n")
     qtbot.waitUntil(lambda: bool(errors), timeout=5000)
     assert c.config.models[0].profiles[1].name == "mtp2"
 
@@ -344,8 +397,25 @@ def test_rescan_reports_counts(env):
     w = app.open_settings()
     gb.model(llm / "new-model.gguf", "qwen35", 5120)
     w.folders_tab.rescan()
-    assert "7 models, 3 mmproj, 1 draft" in w.folders_tab.scan_status.text()
+    assert "7 models, 3 mmproj, 1 draft, 1 lora" in w.folders_tab.scan_status.text()
     assert any(e.path.endswith("new-model.gguf") for e in c.entries)
+
+
+def test_file_table_sorts_by_any_column_and_keeps_it_on_rescan(env):
+    app, c, llm, swift = env
+    t = app.open_settings().folders_tab.file_table
+
+    def column(col):
+        return [t.item(r, col).text() for r in range(t.rowCount())]
+
+    t.sortByColumn(1, Qt.AscendingOrder)
+    kinds = column(1)
+    assert kinds == sorted(kinds) and kinds[0] == "draft"
+    app.open_settings().folders_tab.rescan()
+    assert column(1) == sorted(column(1))
+    t.sortByColumn(3, Qt.AscendingOrder)
+    sizes = [int(v.split()[1]) for v in column(3) if v.startswith("embedding ") and v.split()[1].isdigit()]
+    assert sizes == sorted(sizes) and 1024 in sizes and 5120 in sizes  # numeric: 1024 before 5120 and 2048
 
 
 def test_listen_hint(env):

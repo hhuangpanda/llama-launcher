@@ -72,6 +72,25 @@ def draft(path, arch, n_embd=1024):
     )
 
 
+def dflash(path, pre, n_embd):
+    return write_gguf(
+        path,
+        {
+            "general.architecture": "dflash",
+            "general.type": "model",
+            "dflash.embedding_length": n_embd,
+            "tokenizer.ggml.pre": pre,
+        },
+    )
+
+
+def lora(path, arch):
+    return write_gguf(
+        path,
+        {"general.architecture": arch, "general.type": "adapter", "adapter.type": "lora", "adapter.lora_alpha": 1.0},
+    )
+
+
 def llm_folder(root: Path) -> Path:
     """A flat folder mixing several model families, their mmproj files and an MTP draft."""
     d = Path(root)
@@ -85,5 +104,6 @@ def llm_folder(root: Path) -> Path:
     mmproj(d / "gemma-4-12B-it-qat-mmproj-F16.gguf", 3840, audio_dim=3840)
     model(d / "gemma-4-12B-it-qat-q4_0-unquantized-heretic-Q4_0.gguf", "gemma4", 3840)
     draft(d / "mtp-gemma-4-12B-it-Q4_0.gguf", "gemma4-assistant")
+    lora(d / "gemma-4-12B-style-LoRA.gguf", "gemma4")
     (d / "gemma-4-template.jinja").write_text("x")
     return d

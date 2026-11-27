@@ -29,6 +29,8 @@ GGUF fixtures are tiny header-only files written by a test helper.
 | C6 | nested folders, junction loop, unreadable dir | scan completes, loop not followed |
 | C7 | same file under two enrolled folders | listed once |
 | C8 | hard links into per-model subfolders | each link listed as its own path, pairs within its folder |
+| C9 | LoRA adapter (`general.type = adapter`) | kind `lora`, not a model; offered to models of the same arch, never auto-attached; set per profile, so other profiles of the model don't get it; mismatch -> validation error |
+| C10 | generic draft arch (`dflash`) | fits when `tokenizer.ggml.pre` and embedding size match the model; auto-attached like other drafts, with no `--spec-type` (llama-server picks it) |
 
 ### Config (unit)
 
@@ -36,10 +38,12 @@ GGUF fixtures are tiny header-only files written by a test helper.
 |---|---|---|
 | F1 | load, edit one field, save | other content and user comments preserved byte-for-byte |
 | F2 | two profiles on one file, ctx set via UI path, then via quick picker "save as default" | exactly one `ctx_size` per profile; no duplicate model entries (regression for bug 1) |
-| F3 | invalid TOML on disk | last good config kept, error surfaced |
+| F3 | invalid TOML on disk, or a bad value in settings.toml | last good config kept, error surfaced |
 | F4 | external edit while running | reload fires once (debounced), restart badge if argv changed |
 | F5 | profile references missing file | profile marked missing, others unaffected |
 | F6 | API key set/cleared in Settings | `api_key` written to settings.toml; empty string = no key |
+| F7 | unknown key; model without `file`, model/profile/runtime listed twice, runtime without name/path | reported (tray + app.log) and skipped, the rest loads; a save writes them back unchanged |
+| F8 | bad value (wrong type, out of range) in a model or profile | that model/profile loads but can't launch; the rest runs; a save keeps the value until it's set in the app. In settings.toml it rejects the file (F3) |
 
 ### Args (unit)
 
@@ -57,8 +61,10 @@ GGUF fixtures are tiny header-only files written by a test helper.
 | A10 | same profile on two runtimes with different help | canonicalization uses each runtime's table |
 | A11 | idle sleep 3600 | `--sleep-idle-seconds 3600`; idle stop/off -> flag absent |
 | A12 | one-shot ctx 32k | applies to that start only; config file unchanged |
-| A13 | mmproj/draft fields | `--mmproj`/`-md` rendered once; raw `--mmproj` in args wins and warns |
+| A13 | model mmproj, profile draft fields | `--mmproj`/`-md` rendered once; raw `--mmproj` in args wins and warns |
+| A17 | `draft` on a model in an older profiles.toml | copied to each of its profiles without one; the next save writes it per profile |
 | A14 | profile imported from a command line | rebuilds the same flags as the command (minus host/port/order) |
+| A16 | profile `spec_type` | `auto` passes no `--spec-type` (dropping a global one); a value replaces global args, profile args win with a warning; draft types that don't fit the draft, or two DFlash types, are blocked; a dflash draft with only n-gram types warns it's unused |
 | A15 | runtime build before / from b10519 | `--metrics` added only from b10519, where `/metrics` neither wakes nor resets the idle timer |
 
 ### Runtimes (unit + real)
@@ -95,11 +101,12 @@ GGUF fixtures are tiny header-only files written by a test helper.
 
 | id | case | expect |
 |---|---|---|
-| I1 | new commands | runtimes/folders added by path, shared flags become global args, sidecars become model fields, every profile rebuilds its command |
+| I1 | new commands | runtimes/folders added by path, shared flags become global args, the mmproj becomes a model field and the draft and LoRA profile fields, every profile rebuilds its command |
 | I2 | same input again | all unchanged, nothing written |
 | I3 | changed command | conflict, skipped; `--replace` overwrites |
 | I4 | existing runtime / parent folder | matched by path, not added again |
 | I5 | model already has another mmproj | command's mmproj kept in profile args |
+| I9 | two commands for one model, one with `--lora` | LoRA set on that profile only; re-run unchanged |
 | I6 | global flag absent from a command | profile unsets it |
 | I7 | no `-m`, same model + name twice, bad JSON | reported per entry |
 | I8 | CLI | dry run by default; `--write` applies; re-run writes nothing |
@@ -134,6 +141,7 @@ GGUF fixtures are tiny header-only files written by a test helper.
 | U10 | second app instance | exits immediately, first instance opens Settings |
 | U11 | `llama-launcher --quit` (quit message) | running instance quits the same way as the tray's Quit; Settings not opened |
 | U12 | app start / tray menu | a brief card near the tray says it's running, a click opens the menu; menu items have icons |
+| U14 | profile editor Speculative row | Draft lists only Auto (dflash drafts), Off (no draft) and the draft's own type; picking a value moves `--spec-type` out of profile args; Auto with an n-gram type becomes the explicit draft type |
 | U13 | View server log (Settings or tray Logs submenu) | one window per file, follows appended lines, freed on close |
 
 ### Real (opt-in, `pytest -m real`)

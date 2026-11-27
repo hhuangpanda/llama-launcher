@@ -131,8 +131,8 @@ def test_one_shot_ctx(release_help):
 
 # A13
 def test_model_fields_rendered_once_raw_wins(release_help):
-    m = ModelEntry(r"C:\m\a.gguf", mmproj=r"C:\m\p1.gguf", draft=r"C:\m\d.gguf")
-    s = build(release_help, model=m, prof=Profile("p", args=r"-mm C:\m\p2.gguf"))
+    m = ModelEntry(r"C:\m\a.gguf", mmproj=r"C:\m\p1.gguf")
+    s = build(release_help, model=m, prof=Profile("p", draft=r"C:\m\d.gguf", args=r"-mm C:\m\p2.gguf"))
     assert count(s, "--mmproj", "-mm") == 1 and value(s, "-mm") == r"C:\m\p2.gguf"
     assert value(s, "--spec-draft-model") == r"C:\m\d.gguf"
     assert any("overrides the model's mmproj" in d.message for d in s.diagnostics)
@@ -161,6 +161,15 @@ def test_listen_all_connects_locally(release_help):
     assert value(s, "--host") == "0.0.0.0" and s.base_url == "http://127.0.0.1:9000"
 
 
+# F8
+def test_invalid_value_blocks_launch(release_help):
+    p = Profile("p", invalid={"ctx_size": "profiles.toml models[0].profiles[0]: 'ctx_size' must be int, got str"})
+    s = build(release_help, prof=p)
+    assert not s.ok and "'ctx_size' must be int" in s.diagnostics[0].message
+    m = ModelEntry(r"C:\m\model.gguf", invalid={"draft": "profiles.toml models[0]: 'draft' must be str, got int"})
+    assert not build(release_help, model=m).ok
+
+
 def test_no_runtime(release_help):
     s = launch.build(Settings(), ModelEntry(r"C:\m\a.gguf"), Profile("p"), None, release_help)
     assert not s.ok and "no llama.cpp runtime" in s.diagnostics[0].message
@@ -187,9 +196,92 @@ def test_mmproj_mismatch_blocked(release_help, llm):
 
 def test_draft_mismatch_blocked(release_help, llm):
     d, cache = llm
-    m = ModelEntry(str(d / "Qwen3.8-27B-GSQ-RCO-IQ3_XXS.gguf"), draft=str(d / "mtp-gemma-4-12B-it-Q4_0.gguf"))
-    s = build(release_help, model=m, get_info=cache.get)
+    m = ModelEntry(str(d / "Qwen3.8-27B-GSQ-RCO-IQ3_XXS.gguf"))
+    p = Profile("p", draft=str(d / "mtp-gemma-4-12B-it-Q4_0.gguf"))
+    s = build(release_help, prof=p, model=m, get_info=cache.get)
     assert not s.ok and "doesn't fit a qwen35 model" in s.diagnostics[0].message
+
+
+# A16
+@pytest.fixture
+def ink(tmp_path):
+    d = tmp_path / "ink"
+    gb.write_gguf(
+        d / "ink.gguf", {"general.architecture": "x", "x.embedding_length": 2304, "tokenizer.ggml.pre": "ink"}
+    )
+    gb.dflash(d / "dspark-ink.gguf", "ink", 2304)
+    return d, c.InfoCache()
+
+
+def ink_build(release_help, ink, spec="", glob_args="", prof_args="", draft=True, version=None):
+    d, cache = ink
+    m = ModelEntry(str(d / "ink.gguf"))
+    p = Profile("p", draft=str(d / "dspark-ink.gguf") if draft else "", spec_type=spec, args=prof_args)
+    return build(release_help, glob_args, p, m, get_info=cache.get, version=version)
+
+
+def messages(spec):
+    return " | ".join(d.message for d in spec.diagnostics)
+
+
+def test_spec_auto_passes_nothing_and_drops_global(release_help, ink):
+    s = ink_build(release_help, ink, spec="auto", glob_args="--spec-type ngram-mod")
+    assert s.ok and "--spec-type" not in s.argv
+    assert ink_build(release_help, ink).ok  # nothing anywhere: llama-server picks draft-dflash
+
+
+def test_spec_field_layers_and_args_override_warns(release_help, ink):
+    s = ink_build(release_help, ink, spec="draft-dflash,ngram-mod", glob_args="--spec-type ngram-simple")
+    assert s.ok and value(s, "--spec-type") == "draft-dflash,ngram-mod"
+    s = ink_build(release_help, ink, spec="draft-dflash", prof_args="--spec-type ngram-mod,draft-dflash")
+    assert value(s, "--spec-type") == "ngram-mod,draft-dflash" and "overrides the profile's speculative" in messages(s)
+
+
+@pytest.mark.parametrize(
+    "spec,draft,needle",
+    [
+        ("draft-mtp", True, "is a DFlash draft: use draft-dflash"),
+        ("draft-dflash", False, "needs a DFlash draft"),
+        ("draft-dflash,draft-dspark", True, "can't be combined"),
+        ("draft-simple", False, "draft-simple needs a draft file"),
+    ],
+)
+def test_spec_mismatch_blocked(release_help, ink, spec, draft, needle):
+    s = ink_build(release_help, ink, spec=spec, draft=draft)
+    assert not s.ok and needle in messages(s)
+
+
+def test_spec_dflash_unused_and_old_build(release_help, ink):
+    s = ink_build(release_help, ink, spec="ngram-mod")
+    assert s.ok and "loaded but unused" in messages(s)
+    s = ink_build(release_help, ink, version=VersionInfo("", 10000, ""))
+    assert not s.ok and "doesn't pick a spec type itself" in messages(s)
+    assert ink_build(release_help, ink, spec="draft-dspark", version=VersionInfo("", 10000, "")).ok
+
+
+def test_drop_and_read_flag(release_help):
+    text = "--temp 1 --spec-type ngram-mod --chat-template-kwargs '{\"a\": 1}'"
+    assert args.flag_value(text, "--spec-type", release_help) == "ngram-mod"
+    out = args.drop_flag(text, "--spec-type", release_help)
+    assert args.flag_value(out, "--spec-type", release_help) is None
+    assert args.tokenize(out) == ["--temp", "1", "--chat-template-kwargs", '{"a": 1}']
+    assert args.drop_flag("--temp 1", "--spec-type", release_help) == "--temp 1"
+
+
+def test_lora_field_and_mismatch(release_help, llm):
+    d, cache = llm
+    lora = str(d / "gemma-4-12B-style-LoRA.gguf")
+    gemma, qwen = (
+        ModelEntry(str(d / f)) for f in ("gemma-4-12B-it-qat-UD-Q4_K_XL.gguf", "Qwen3.8-27B-GSQ-RCO-IQ3_XXS.gguf")
+    )
+    ok = build(release_help, prof=Profile("p", lora=lora), model=gemma, get_info=cache.get)
+    assert ok.ok and value(ok, "--lora") == lora
+    assert "--lora" not in build(release_help, prof=Profile("q"), model=gemma, get_info=cache.get).argv
+    bad = build(release_help, prof=Profile("p", lora=lora), model=qwen, get_info=cache.get)
+    assert (
+        not bad.ok
+        and "lora gemma-4-12B-style-LoRA.gguf (arch gemma4) doesn't fit a qwen35" in bad.diagnostics[0].message
+    )
 
 
 @pytest.mark.parametrize(
@@ -203,10 +295,11 @@ def test_mtp_needs_head(release_help, llm, file, ok):
 
 def test_mtp_draft_needs_spec_type(release_help, llm):
     d, cache = llm
-    m = ModelEntry(str(d / "gemma-4-12B-it-qat-UD-Q4_K_XL.gguf"), draft=str(d / "mtp-gemma-4-12B-it-Q4_0.gguf"))
-    s = build(release_help, model=m, get_info=cache.get)
+    m = ModelEntry(str(d / "gemma-4-12B-it-qat-UD-Q4_K_XL.gguf"))
+    p = Profile("p", draft=str(d / "mtp-gemma-4-12B-it-Q4_0.gguf"))
+    s = build(release_help, prof=p, model=m, get_info=cache.get)
     assert not s.ok and "is an MTP head: add --spec-type draft-mtp" in s.diagnostics[0].message
-    assert build(release_help, "--spec-type draft-mtp", model=m, get_info=cache.get).ok
+    assert build(release_help, "--spec-type draft-mtp", prof=p, model=m, get_info=cache.get).ok
 
 
 def test_ctx_over_trained_warns(release_help, llm):
@@ -232,7 +325,7 @@ def test_model_rows_merge_configured_and_scanned(llm):
     assert [p.name for p in rows["Qwen3.8-27B-UD-Q2_K_XL"].model.profiles] == ["a", "b"]
     assert rows["missing"].exists is False
     gemma = rows["gemma-4-12B-it-qat-UD-Q4_K_XL"]
-    assert gemma.implicit and gemma.model.draft and gemma.model.profiles[0].args == "--spec-type draft-mtp"
+    assert gemma.implicit and gemma.model.profiles[0].draft and gemma.model.profiles[0].spec_type == "draft-mtp"
     assert rows["Qwen3.6-35B-A3B-UD-Q4_K_M"].model.profiles[0].args == ""
 
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from datetime import datetime
 
 from PySide6.QtCore import Qt
@@ -23,6 +24,17 @@ from PySide6.QtWidgets import (
 from llama_launcher import catalog, paths
 from llama_launcher.catalog import Kind
 from llama_launcher.ui.tabs.base import SettingsTab
+
+
+class _Item(QTableWidgetItem):
+    """Sorts case-insensitively, with numbers in natural order ("embedding 1024" < "embedding 5120")."""
+
+    def __init__(self, text: str):
+        super().__init__(text)
+        self._key = [(0, int(t), "") if t.isdigit() else (1, 0, t) for t in re.split(r"(\d+)", text.lower())]
+
+    def __lt__(self, other):
+        return self._key < other._key if isinstance(other, _Item) else super().__lt__(other)
 
 
 class FoldersTab(SettingsTab):
@@ -52,6 +64,8 @@ class FoldersTab(SettingsTab):
         self.file_table.setHorizontalHeaderLabels(["File", "Kind", "Arch", "Size match", "Folder"])
         self.file_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.Stretch)
         self.file_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.file_table.horizontalHeader().setSortIndicator(0, Qt.AscendingOrder)
+        self.file_table.setSortingEnabled(True)
         lay.addWidget(self.file_table, 1)
 
     def load(self) -> None:
@@ -71,10 +85,16 @@ class FoldersTab(SettingsTab):
     def _scan(self) -> None:
         entries = catalog.scan(self.owner.settings.model_folders, self.c.info_cache)
         counts = {k: sum(e.kind is k for e in entries) for k in Kind}
-        parts = [f"{counts[Kind.MODEL]} models", f"{counts[Kind.MMPROJ]} mmproj", f"{counts[Kind.DRAFT]} draft"]
+        parts = [
+            f"{counts[Kind.MODEL]} models",
+            f"{counts[Kind.MMPROJ]} mmproj",
+            f"{counts[Kind.DRAFT]} draft",
+            f"{counts[Kind.LORA]} lora",
+        ]
         if counts[Kind.UNREADABLE]:
             parts.append(f"{counts[Kind.UNREADABLE]} unreadable")
         self.scan_status.setText(f"Scanned {datetime.now():%H:%M:%S}: " + ", ".join(parts))
+        self.file_table.setSortingEnabled(False)  # rows would move while being filled
         self.file_table.setRowCount(0)
         for e in entries:
             i = self.file_table.rowCount()
@@ -83,6 +103,8 @@ class FoldersTab(SettingsTab):
             match = ""
             if info and e.kind is Kind.MMPROJ:
                 match = "projection " + ", ".join(map(str, info.projection_dims))
+            elif info and e.kind is Kind.LORA:
+                match = f"arch {info.arch}"
             elif info:
                 match = f"embedding {info.embedding_length}" + (" + MTP" if info.nextn_layers else "")
             vals = (
@@ -93,7 +115,8 @@ class FoldersTab(SettingsTab):
                 os.path.dirname(e.path),
             )
             for col, text in enumerate(vals):
-                self.file_table.setItem(i, col, QTableWidgetItem(text))
+                self.file_table.setItem(i, col, _Item(text))
+        self.file_table.setSortingEnabled(True)
         self.file_table.resizeColumnsToContents()
         self.owner.set_entries(entries)
 

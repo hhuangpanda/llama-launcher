@@ -49,8 +49,15 @@ Settings, profiles and logs live in `%LOCALAPPDATA%\llama-launcher\`
   GGUF headers decide what each file is:
   models,
   mmproj files (paired when `clip.vision.projection_dim` equals the model's `embedding_length`)
-  and draft heads (`<arch>-assistant`).
-  A sidecar is attached automatically only when exactly one fits in the model's own folder.
+  draft heads (`<arch>-assistant`, or a generic `dflash` draft with the model's tokenizer and embedding size)
+  and LoRA adapters (same arch).
+  The mmproj is shared by all of a model's profiles; the draft and LoRA are set per profile.
+  An mmproj or draft is attached automatically only when exactly one fits in the model's own folder;
+  a LoRA changes output, so it is only offered.
+- **Speculative decoding**: a profile's Draft and N-gram choices make up `--spec-type`,
+  limited to the type the profile's draft file needs (`draft-mtp`, `draft-dflash` or `draft-simple`).
+  Auto passes no `--spec-type` so llama-server picks it from the draft (DFlash drafts only;
+  MTP heads need `draft-mtp` set or llama-server crashes).
 - **Profile**: one way to launch a model.
   A model can have several.
   Every scanned model has an implicit `default_profile` until you save one.
@@ -69,7 +76,12 @@ Settings, profiles and logs live in `%LOCALAPPDATA%\llama-launcher\`
 ## Files
 
 `settings.toml` and `profiles.toml` are meant to be hand-editable;
-the app reloads them on change and keeps the last good version if an edit doesn't parse.
+the app reloads them on change and keeps the last good version if an edit doesn't parse
+or puts a bad value in `settings.toml`.
+Problems are shown in a tray notification and `app.log`; the rest of the config still loads:
+an unknown key or a broken entry (no `file`, a duplicate) is skipped,
+and a model or profile with a bad value is listed but can't launch until it's fixed.
+Saving leaves all of these in the file as they are.
 Logs: `logs\server.log` (current or last server run, with the full command line)
 and `server.prev.log`, `app.log` and `app.prev.log`.
 Settings > General > View server log shows `server.log` live while the window is open.
@@ -88,7 +100,7 @@ where `command` is the full llama-server command line (exe first), as a list or 
 `-` reads it from stdin.
 
 - The exe's folder becomes a runtime;
-  `-m`, `--mmproj`, `-md`, `--alias`, `-c`, `-ctk`, `-ctv` become model/profile fields;
+  `-m`, `--mmproj`, `-md`, `--lora`, `--alias`, `-c`, `-ctk`, `-ctv` become model/profile fields;
   everything else goes to the profile's args.
 - When global args are empty, flags every command shares become the global args.
 - Runtimes and model folders are matched by path.

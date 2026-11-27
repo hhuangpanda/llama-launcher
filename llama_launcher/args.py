@@ -97,6 +97,37 @@ def parse_text(text: str, help_table: HelpTable, layer: str) -> list[Flag]:
         raise ArgError(msg if msg.startswith(layer) else f"{layer}: {msg}") from None
 
 
+def _quote(v: str) -> str:
+    if v and not any(c.isspace() or c in "'\"" for c in v):
+        return v
+    return f"'{v}'" if "'" not in v else '"' + v.replace('"', '\\"') + '"'
+
+
+def join_flags(flags: list[Flag]) -> str:
+    """Flags back to an args string that tokenize() reads the same way."""
+    return " ".join(f.flag if f.value is None else f"{f.flag} {_quote(f.value)}" for f in flags)
+
+
+def flag_value(text: str, flag: str, help_table: HelpTable) -> str | None:
+    """The last value of flag in an args string; None when absent or unparsable."""
+    try:
+        flags = parse(tokenize(text), help_table)
+    except ArgError:
+        return None
+    hits = [f for f in flags if help_table.canonical(f.flag) == help_table.canonical(flag)]
+    return (hits[-1].value or "") if hits else None
+
+
+def drop_flag(text: str, flag: str, help_table: HelpTable) -> str:
+    """text without flag (any spelling); unchanged when it doesn't parse or has no such flag."""
+    try:
+        flags = parse(tokenize(text), help_table)
+    except ArgError:
+        return text
+    keep = [f for f in flags if help_table.canonical(f.flag) != help_table.canonical(flag)]
+    return text if len(keep) == len(flags) else join_flags(keep)
+
+
 def reserved_in(flags: list[Flag], help_table: HelpTable) -> list[str]:
     res = {help_table.canonical(r) for r in RESERVED}
     return [f.flag for f in flags if help_table.canonical(f.flag) in res]
